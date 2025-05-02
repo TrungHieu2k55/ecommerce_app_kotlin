@@ -2,6 +2,7 @@ package com.example.duan.View.search
 
 import android.content.Context
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +10,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import coil.request.ImageRequest
 import com.example.duan.R
 import com.example.duan.View.components.FilterDialog
@@ -59,10 +62,10 @@ fun SearchScreen(
     var searchResults by remember { mutableStateOf<List<Product>>(emptyList()) }
     var showFilterDialog by remember { mutableStateOf(false) }
     var appliedFilters by remember { mutableStateOf<FilterState?>(null) }
+    var filterError by remember { mutableStateOf<String?>(null) }
 
-    // Tải kết quả tìm kiếm khi query thay đổi
     LaunchedEffect(searchQuery, appliedFilters) {
-        if (searchQuery.isNotBlank()) {
+        try {
             val filteredResults = ProductApiClient.filterProducts(
                 brand = appliedFilters?.brand,
                 gender = appliedFilters?.gender,
@@ -70,9 +73,17 @@ fun SearchScreen(
                 priceRange = appliedFilters?.priceRange,
                 minRating = appliedFilters?.minRating
             )
-            searchResults = filteredResults.filter { it.name.contains(searchQuery, ignoreCase = true) }
-        } else {
+            searchResults = if (searchQuery.isNotBlank()) {
+                filteredResults.filter { it.name.contains(searchQuery, ignoreCase = true) }
+            } else {
+                filteredResults
+            }
+            println("Search results: ${searchResults.size} products")
+            filterError = null
+        } catch (e: Exception) {
+            filterError = "Lỗi khi lọc sản phẩm: ${e.message}"
             searchResults = emptyList()
+            println("Filter error: ${e.message}")
         }
     }
 
@@ -85,7 +96,7 @@ fun SearchScreen(
                         onValueChange = { query ->
                             searchQuery = query
                         },
-                        placeholder = { Text("Search") },
+                        placeholder = { Text("Tìm kiếm") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -98,10 +109,10 @@ fun SearchScreen(
                         trailingIcon = {
                             if (searchQuery.isNotBlank()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                    Icon(Icons.Default.Clear, contentDescription = "Xóa")
                                 }
                             } else {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
+                                Icon(Icons.Default.Search, contentDescription = "Tìm kiếm")
                             }
                         },
                         colors = TextFieldDefaults.outlinedTextFieldColors(
@@ -114,7 +125,7 @@ fun SearchScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Back",
+                            contentDescription = "Quay lại",
                             tint = Color.Black
                         )
                     }
@@ -123,7 +134,7 @@ fun SearchScreen(
                     IconButton(onClick = { showFilterDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.FilterList,
-                            contentDescription = "Filter",
+                            contentDescription = "Lọc",
                             tint = Color.Black
                         )
                     }
@@ -143,7 +154,7 @@ fun SearchScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
-            if (searchQuery.isBlank()) {
+            if (searchQuery.isBlank() && appliedFilters == null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -152,13 +163,13 @@ fun SearchScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent",
+                        text = "Gần đây",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     if (recentSearches.isNotEmpty()) {
                         Text(
-                            text = "Clear All",
+                            text = "Xóa tất cả",
                             fontSize = 14.sp,
                             color = Color(0xFF4FC3F7),
                             modifier = Modifier
@@ -190,7 +201,7 @@ fun SearchScreen(
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.Clear,
-                                    contentDescription = "Remove",
+                                    contentDescription = "Xóa",
                                     tint = Color(0xFF4FC3F7)
                                 )
                             }
@@ -205,27 +216,57 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Result for \"$searchQuery\"",
+                        text = if (searchQuery.isNotBlank()) "Kết quả cho \"$searchQuery\"" else "Kết quả lọc",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${searchResults.size} founds",
+                        text = "${searchResults.size} sản phẩm",
                         fontSize = 14.sp,
                         color = Color.Gray
                     )
                 }
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(searchResults) { product ->
-                        ProductItem(
-                            product = product,
-                            navController = navController
+                if (filterError != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = filterError!!,
+                            fontSize = 16.sp,
+                            color = Color.Red,
+                            fontWeight = FontWeight.Medium
                         )
+                    }
+                } else if (searchResults.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Không có sản phẩm phù hợp",
+                            fontSize = 16.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(searchResults) { product ->
+                            ProductItem(
+                                product = product,
+                                navController = navController
+                            )
+                        }
                     }
                 }
             }
@@ -247,31 +288,27 @@ fun SearchScreen(
 
 @Composable
 fun ProductItem(product: Product, navController: NavController) {
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(4.dp)
             .clickable {
-                // Mã hóa Product thành JSON và URL encode
                 val productJson = Gson().toJson(product)
                 val encodedProductJson = URLEncoder.encode(productJson, StandardCharsets.UTF_8.toString())
                 navController.navigate("product_details/$encodedProductJson")
-            },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
+                .padding(4.dp)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(16.dp))
             ) {
+                // Product Image
                 val imageUrl = product.images.firstOrNull()?.takeIf { it.isNotBlank() && it.startsWith("http") }
 
                 if (imageUrl != null) {
@@ -295,51 +332,74 @@ fun ProductItem(product: Product, navController: NavController) {
                         contentScale = ContentScale.Crop
                     )
                 }
-                IconButton(
-                    onClick = { /* Thêm vào yêu thích */ },
+
+                // Favorite Button
+                Box(
                     modifier = Modifier
+                        .size(36.dp)
                         .align(Alignment.TopEnd)
-                        .padding(4.dp)
+                        .padding(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.8f))
+                        .clickable { /* Add to favorites */ },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.FavoriteBorder,
                         contentDescription = "Favorite",
-                        tint = Color(0xFF4FC3F7)
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
+
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = product.name,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+
+            // Product Info Section
             Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Product Name
                 Text(
-                    text = "$${product.price}",
-                    fontSize = 14.sp,
-                    color = Color.Black
+                    text = product.name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+
+                // Rating Section
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = "Rating",
-                        tint = Color(0xFFFFC107),
+                        tint = Color(0xFFFFD700), // Gold color for star
                         modifier = Modifier.size(16.dp)
                     )
+
                     Spacer(modifier = Modifier.width(4.dp))
+
                     Text(
                         text = product.rating.toString(),
                         fontSize = 14.sp,
-                        color = Color.Black
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Gray
                     )
                 }
             }
+
+            // Price with bold styling
+            Text(
+                text = "$${product.price}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = Color(0xFF1E1E1E)
+            )
         }
     }
 }

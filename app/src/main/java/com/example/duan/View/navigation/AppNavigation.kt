@@ -8,12 +8,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.duan.Model.model.Order
 import com.example.duan.Model.model.Product
 import com.example.duan.View.Cart.MyCartScreen
+import com.example.duan.View.home.CategoryProductsScreen
 import com.example.duan.View.home.EditAddressScreen
 import com.example.duan.View.home.EditProfilePictureScreen
 import com.example.duan.View.home.HomeScreen
@@ -32,12 +36,14 @@ import com.example.duan.ViewModel.usecase.auth.RegisterScreen
 import com.google.gson.Gson
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import android.util.Log
+import com.example.duan.View.home.OrderDetailScreen
 
 @Composable
 fun AppNavigation(
-    authViewModel: AuthViewModel = hiltViewModel(),
-    cartViewModel: CartViewModel = hiltViewModel()
+    authViewModel: AuthViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -47,13 +53,6 @@ fun AppNavigation(
 
     val userId = authViewModel.getCurrentUserId()
     val userProfile by authViewModel.userProfile.collectAsState()
-
-    // Tải dữ liệu giỏ hàng ngay khi có userId
-    LaunchedEffect(userId) {
-        if (userId != null) {
-            cartViewModel.loadCartItems(userId)
-        }
-    }
 
     val startDestination = when {
         isFirstLaunch -> "wel"
@@ -96,6 +95,17 @@ fun AppNavigation(
                     userName = userProfile?.displayName
                 )
             }
+            composable(
+                route = "category_products/{categoryName}",
+                arguments = listOf(navArgument("categoryName") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val categoryName = backStackEntry.arguments?.getString("categoryName") ?: "Unknown"
+                Log.d("AppNavigation", "Navigated to category_products with categoryName: $categoryName")
+                CategoryProductsScreen(
+                    categoryName = categoryName,
+                    navController = navController
+                )
+            }
             composable("search") {
                 SearchScreen(navController = navController, authViewModel = authViewModel)
             }
@@ -103,7 +113,24 @@ fun AppNavigation(
             composable("order") { OrderScreen(navController) }
             composable("setting") { SettingScreen(navController, authViewModel) }
             composable("my_cart") {
-                MyCartScreen(cartViewModel, navController, userProfile?.uid ?: "")
+                val cartViewModel: CartViewModel = hiltViewModel()
+                val userIdForCart = userProfile?.uid
+                LaunchedEffect(userIdForCart) {
+                    userIdForCart?.let { cartViewModel.init(it) }
+                }
+                if (userIdForCart != null) {
+                    MyCartScreen(
+                        cartViewModel = cartViewModel,
+                        navController = navController,
+                        userId = userIdForCart
+                    )
+                } else {
+                    LaunchedEffect(Unit) {
+                        navController.navigate("login") {
+                            popUpTo("main") { inclusive = false }
+                        }
+                    }
+                }
             }
             composable("product_details/{productJson}") { backStackEntry ->
                 val productJson = backStackEntry.arguments?.getString("productJson")
@@ -113,12 +140,13 @@ fun AppNavigation(
                 val product = decodedProductJson?.let {
                     Gson().fromJson(it, Product::class.java)
                 }
-                if (product != null) {
+                val userIdForProduct = userProfile?.uid
+                if (product != null && userIdForProduct != null) {
                     ProductDetailsScreen(
                         navController = navController,
-                        cartViewModel = cartViewModel,
+                        cartViewModel = hiltViewModel(),
                         product = product,
-                        userId = userProfile?.uid ?: ""
+                        userId = userIdForProduct
                     )
                 } else {
                     LaunchedEffect(Unit) {
@@ -127,6 +155,27 @@ fun AppNavigation(
                         }
                     }
                 }
+            }
+            composable("order_details/{orderJson}") { backStackEntry ->
+                val orderJson = backStackEntry.arguments?.getString("orderJson")
+                val decodedOrderJson = orderJson?.let {
+                    URLDecoder.decode(it, StandardCharsets.UTF_8.toString())
+                }
+                val order = decodedOrderJson?.let {
+                    Gson().fromJson(it, Order::class.java)
+                }
+//                if (order != null) {
+//                    OrderDetailScreen(
+//                        navController = navController,
+//                        order = order
+//                    )
+//                } else {
+//                    LaunchedEffect(Unit) {
+//                        navController.navigate("order") {
+//                            popUpTo("main") { inclusive = false }
+//                        }
+//                    }
+//                }
             }
             composable("edit_profile") { EditProfilePictureScreen(navController, authViewModel) }
             composable("payment_methods") { PaymentMethodsScreen(navController, authViewModel) }

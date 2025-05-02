@@ -25,7 +25,7 @@ fun FilterDialog(
     var selectedBrand by remember { mutableStateOf("ALL") }
     var selectedGender by remember { mutableStateOf("ALL") }
     var selectedSortBy by remember { mutableStateOf("Popular") }
-    var priceRange by remember { mutableStateOf(Pair(2.0, 150.0)) }
+    var priceRange by remember { mutableStateOf(Pair(2.0, 350.0)) }
     var selectedRating by remember { mutableStateOf<Double?>(4.5) }
 
     AlertDialog(
@@ -41,7 +41,7 @@ fun FilterDialog(
                         .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("ALL", "Nike", "Adidas", "Puma").forEach { brand ->
+                    listOf("ALL", "Nike", "Adidas", "Puma","Technology").forEach { brand ->
                         FilterButton(
                             text = brand,
                             isSelected = selectedBrand == brand,
@@ -97,7 +97,7 @@ fun FilterDialog(
                     onValueChange = { range ->
                         priceRange = Pair(range.start.toDouble(), range.endInclusive.toDouble())
                     },
-                    valueRange = 2f..150f,
+                    valueRange = 2f..350f,
                     steps = 148,
                     modifier = Modifier.fillMaxWidth(),
                     colors = SliderDefaults.colors(

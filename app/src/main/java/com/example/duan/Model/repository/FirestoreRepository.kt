@@ -180,7 +180,7 @@ class FirestoreRepository @Inject constructor() {
     suspend fun getHoodiesProducts(limit: Long = 5): Result<List<Product>> {
         return try {
             val snapshot = firestore.collection("products")
-                .whereEqualTo("category", "Hoodies")
+                .whereEqualTo("categories", "Hoodies")
                 .limit(limit)
                 .get()
                 .await()
@@ -307,6 +307,38 @@ class FirestoreRepository @Inject constructor() {
                 .document(productId)
                 .update("quantitySold", FieldValue.increment(quantity.toLong()))
                 .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getProductsByCategory(categories: String): Result<List<Product>> {
+        return try {
+            val snapshot = firestore.collection("products")
+                .whereEqualTo("categories", categories)
+                .get()
+                .await()
+            val products = snapshot.toObjects(Product::class.java)
+            Result.success(products)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    //xóa toàn bộ giỏ hàng sau khi đặt hàng thành công.
+    suspend fun clearCart(userId: String): Result<Unit> {
+        return try {
+            val snapshot = firestore.collection("users")
+                .document(userId)
+                .collection("cart")
+                .get()
+                .await()
+            val batch = firestore.batch()
+            snapshot.documents.forEach { document ->
+                batch.delete(document.reference)
+            }
+            batch.commit().await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

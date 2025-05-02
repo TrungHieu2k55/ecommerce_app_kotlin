@@ -1,6 +1,5 @@
 package com.example.duan.View.product
 
-import android.icu.text.SimpleDateFormat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,6 +40,7 @@ import com.example.duan.Model.model.Review
 import com.example.duan.ViewModel.cart.CartViewModel
 import com.example.duan.ViewModel.usecase.product.ProductViewModel
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,16 +57,21 @@ fun ProductDetailsScreen(
     var isFavorite by remember { mutableStateOf(false) }
     var selectedImage by remember { mutableStateOf(product.images.firstOrNull() ?: "") }
     var expandedDescription by remember { mutableStateOf(false) }
-    var quantity by remember { mutableStateOf(1) } // Thêm state cho số lượng
+    var quantity by remember { mutableStateOf(1) }
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Khởi tạo CartViewModel với userId
+    LaunchedEffect(userId) {
+        cartViewModel.init(userId)
+    }
 
     // Lấy dữ liệu reviews từ ViewModel
     LaunchedEffect(product.id) {
         productViewModel.fetchReviews(product.id)
     }
-    val reviews by productViewModel.reviews
-    val errorMessage by productViewModel.errorMessage
+    val reviews by productViewModel.reviews.collectAsState()
+    val errorMessage by productViewModel.errorMessage.collectAsState()
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -149,7 +154,7 @@ fun ProductDetailsScreen(
                             color = Color.Gray
                         )
                         Text(
-                            text = "$${(product.price * quantity).toStringDecimal()}",
+                            text = "${(product.price * quantity).toDouble() } $",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF4FC3F7)
@@ -188,18 +193,17 @@ fun ProductDetailsScreen(
                             }
 
                             // Thêm vào giỏ hàng nếu tất cả điều kiện thỏa mãn
-                            cartViewModel.addToCart(
-                                userId = userId,
-                                item = CartItem(
-                                    productId = product.id,
-                                    productName = product.name,
-                                    price = product.price,
-                                    quantity = quantity,
-                                    size = selectedSize,
-                                    color = selectedColor,
-                                    image = selectedImage
-                                )
+                            val cartItem = CartItem(
+                                id = product.id + System.currentTimeMillis().toString(),
+                                productId = product.id,
+                                productName = product.name,
+                                price = product.price,
+                                quantity = quantity,
+                                image = selectedImage,
+                                size = selectedSize,
+                                color = selectedColor
                             )
+                            cartViewModel.addToCart(cartItem)
                             coroutineScope.launch {
                                 snackbarHostState.showSnackbar("Đã thêm vào giỏ hàng thành công!")
                             }
@@ -563,7 +567,7 @@ fun ProductDetailsScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF4FC3F7) // Màu nền của Card
+                        containerColor = Color(0xFF4FC3F7)
                     ),
                     elevation = cardElevation(defaultElevation = 2.dp)
                 ) {
@@ -576,7 +580,7 @@ fun ProductDetailsScreen(
                             text = "Chọn Số Lượng",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White // Tương phản với nền đỏ
+                            color = Color.White
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -608,7 +612,7 @@ fun ProductDetailsScreen(
                                 text = quantity.toString(),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White // Tương phản với nền đỏ
+                                color = Color.White
                             )
 
                             // Nút tăng số lượng
@@ -623,7 +627,7 @@ fun ProductDetailsScreen(
                                         text = "+",
                                         fontSize = 20.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.Red // Màu đỏ như yêu cầu
+                                        color = Color.Red
                                     )
                                 }
                             }
@@ -809,11 +813,11 @@ fun ReviewItem(review: Review) {
             color = Color.DarkGray,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 60.dp) // Căn lề với avatar
+                .padding(start = 60.dp)
         )
     }
 }
 
-fun Double.toStringDecimal(): String {
-    return "%.2f".format(this)
+fun Long.toStringDecimal(): String {
+    return "%.2f".format(this.toDouble() / 100)
 }

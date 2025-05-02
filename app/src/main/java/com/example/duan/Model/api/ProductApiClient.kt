@@ -12,12 +12,8 @@ object ProductApiClient {
     suspend fun searchProducts(query: String): List<Product> {
         return try {
             val snapshot = if (query.isBlank()) {
-                // Nếu không có query, lấy tất cả sản phẩm
-                firestore.collection("products")
-                    .get()
-                    .await()
+                firestore.collection("products").get().await()
             } else {
-                // Tìm kiếm sản phẩm theo tên (gần đúng)
                 firestore.collection("products")
                     .orderBy("name")
                     .startAt(query.lowercase())
@@ -25,13 +21,14 @@ object ProductApiClient {
                     .get()
                     .await()
             }
-
-            snapshot.documents.mapNotNull { document ->
+            val products = snapshot.documents.mapNotNull { document ->
                 document.toObject<Product>()
             }
+            println("Search products: ${products.size} found for query=$query")
+            products
         } catch (e: Exception) {
             println("Error searching products: ${e.message}")
-            emptyList()
+            throw e
         }
     }
 
@@ -40,11 +37,12 @@ object ProductApiClient {
         gender: String? = null,
         sortBy: String? = null,
         priceRange: Pair<Double, Double>? = null,
-        minRating: Double? = null
+        minRating: Double? = null,
+        maxRating: Double? = null // Thêm giới hạn trên
     ): List<Product> {
         return try {
-            // Bắt đầu với truy vấn cơ bản, khai báo kiểu là Query
             var query: Query = firestore.collection("products")
+            println("Filter params: brand=$brand, gender=$gender, sortBy=$sortBy, priceRange=$priceRange, minRating=$minRating, maxRating=$maxRating")
 
             // Lọc theo brand
             if (brand != null && brand != "ALL") {
@@ -56,34 +54,40 @@ object ProductApiClient {
                 query = query.whereEqualTo("gender", gender)
             }
 
-            // Lọc theo rating
+            // Lấy dữ liệu từ Firestore
+            val snapshot = query.get().await()
+            var products = snapshot.documents.mapNotNull { document ->
+                document.toObject<Product>()
+            }
+
+            // Lọc rating trong bộ nhớ
             if (minRating != null) {
-                query = query.whereGreaterThanOrEqualTo("rating", minRating)
+                products = products.filter { it.rating >= minRating }
+            }
+            if (maxRating != null) {
+                products = products.filter { it.rating <= maxRating }
             }
 
-            // Lọc theo giá
+            // Lọc price trong bộ nhớ
             if (priceRange != null) {
-                query = query.whereGreaterThanOrEqualTo("price", priceRange.first)
-                    .whereLessThanOrEqualTo("price", priceRange.second)
+                products = products.filter { it.price in priceRange.first..priceRange.second }
             }
 
-            // Sắp xếp
+            // Sắp xếp trong bộ nhớ
             if (sortBy != null) {
-                when (sortBy) {
-                    "Price High" -> query = query.orderBy("price", Query.Direction.DESCENDING)
-                    "Popular" -> query = query.orderBy("rating", Query.Direction.DESCENDING)
-                    "Most Recent" -> query = query // Nếu có trường timestamp, bạn có thể thêm orderBy("timestamp")
+                products = when (sortBy) {
+                    "Price High" -> products.sortedByDescending { it.price }
+                    "Popular" -> products.sortedByDescending { it.rating }
+                    "Most Recent" -> products.sortedByDescending { it.createdAt }
+                    else -> products
                 }
             }
 
-            // Lấy dữ liệu
-            val snapshot = query.get().await()
-            snapshot.documents.mapNotNull { document ->
-                document.toObject<Product>()
-            }
+            println("Filtered products: ${products.size} found")
+            products
         } catch (e: Exception) {
             println("Error filtering products: ${e.message}")
-            emptyList()
+            throw e
         }
     }
 }

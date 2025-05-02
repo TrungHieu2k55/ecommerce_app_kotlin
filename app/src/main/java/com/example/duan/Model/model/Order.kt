@@ -6,18 +6,21 @@ data class Order(
     val orderId: String = "",
     val userId: String = "",
     val items: List<OrderItem> = emptyList(),
-    val totalCost: Double = 0.0,
+    val totalPrice: Number = 0L,
     val status: String = "Pending",
     val tracking: TrackingInfo? = null,
-    val orderDate: Timestamp? = null // dùng Timestamp để đồng bộ với Firestore
+    val createdAt: Timestamp? = null,
+    val shippingAddress: String = "",
+    val couponCode: String? = null,
+    val discount: Number = 0L
 )
 
 data class OrderItem(
     val productId: String = "",
-    val productName: String = "", // để hiển thị tên
-    val image: String = "",       // để hiển thị ảnh
+    val name: String = "",
+    val imageUrl: String = "",
     val quantity: Int = 0,
-    val price: Double = 0.0
+    val price: Number = 0.0
 )
 
 data class TrackingInfo(

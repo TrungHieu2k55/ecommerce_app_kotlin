@@ -36,6 +36,11 @@ import com.google.gson.Gson
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.example.duan.R
 
 @Composable
 fun HomeScreen(
@@ -44,12 +49,13 @@ fun HomeScreen(
     userName: String?,
     productViewModel: ProductViewModel = hiltViewModel()
 ) {
-    val topSellingProducts by productViewModel.topSellingProducts
-    val newInProducts by productViewModel.newInProducts
-    val hoodiesProducts by productViewModel.hoodiesProducts
-    val trendingProducts by productViewModel.trendingProducts
-    val isLoading by productViewModel.isLoading
-    val errorMessage by productViewModel.errorMessage
+    // Sử dụng .collectAsState() để lấy giá trị từ StateFlow
+    val topSellingProducts by productViewModel.topSellingProducts.collectAsState()
+    val newInProducts by productViewModel.newInProducts.collectAsState()
+    val hoodiesProducts by productViewModel.hoodiesProducts.collectAsState()
+    val trendingProducts by productViewModel.trendingProducts.collectAsState()
+    val isLoading by productViewModel.isLoading.collectAsState()
+    val errorMessage by productViewModel.errorMessage.collectAsState()
 
     LaunchedEffect(Unit) {
         productViewModel.fetchTopSellingProducts()
@@ -80,11 +86,16 @@ fun HomeScreen(
             }
 
             item {
-                CategorySection()
+                CategorySection(navController)
             }
 
             item {
-                SectionHeader("Top Selling")
+                SectionHeader(
+                    title = "Top Selling",
+                    onSeeAllClick = {
+                        navController.navigate("category_products/Top Selling")
+                    }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -113,7 +124,12 @@ fun HomeScreen(
             }
 
             item {
-                SectionHeader("New In")
+                SectionHeader(
+                    title = "New In",
+                    onSeeAllClick = {
+                        navController.navigate("category_products/New In")
+                    }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -142,7 +158,12 @@ fun HomeScreen(
             }
 
             item {
-                SectionHeader("Trending")
+                SectionHeader(
+                    title = "Trending",
+                    onSeeAllClick = {
+                        navController.navigate("category_products/Trending")
+                    }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -213,7 +234,6 @@ fun HomeScreen(
 
 @Composable
 fun TopBar(navController: NavController, user: String?, authViewModel: AuthViewModel) {
-    // Lấy userProfile từ AuthViewModel
     val userProfile by authViewModel.userProfile.collectAsState()
     var imageLoadError by remember { mutableStateOf<String?>(null) }
 
@@ -229,7 +249,6 @@ fun TopBar(navController: NavController, user: String?, authViewModel: AuthViewM
                     .clip(CircleShape)
                     .background(Color.LightGray)
             ) {
-                // Hiển thị ảnh hồ sơ người dùng
                 if (userProfile?.photoUrl?.isNotEmpty() == true) {
                     val securePhotoUrl = userProfile?.photoUrl?.replace("http://", "https://") ?: ""
                     val painter = rememberAsyncImagePainter(
@@ -303,7 +322,6 @@ fun TopBar(navController: NavController, user: String?, authViewModel: AuthViewM
         }
     }
 
-    // Hiển thị lỗi nếu có
     if (imageLoadError != null) {
         Text(
             text = imageLoadError ?: "",
@@ -343,10 +361,12 @@ fun SearchBar(navController: NavController) {
 }
 
 @Composable
-fun CategorySection() {
+fun CategorySection(navController: NavController) {
     Column {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -355,37 +375,46 @@ fun CategorySection() {
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
-
-            Text(
-                text = "See All",
-                fontSize = 14.sp,
-                color = Color.Gray
-            )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp)
         ) {
-            items(5) { index ->
-                val categoryName = when (index) {
-                    0 -> "Hoodies"
-                    1 -> "Shorts"
-                    2 -> "Shoes"
-                    3 -> "Bag"
-                    else -> "Accessories"
-                }
-                CategoryItem(categoryName)
+            val categories = listOf(
+                "Hoodies" to R.drawable.hoodiess,
+                "Shorts" to R.drawable.shorts,
+                "Shoes" to R.drawable.shoes,
+                "Bag" to R.drawable.bag,
+                "Accessories" to R.drawable.accessories,
+                "Technology" to R.drawable.technology
+            )
+
+            items(categories) { (categoryName, iconResId) ->
+                CategoryItem(
+                    categoryName = categoryName,
+                    iconResId = iconResId,
+                    navController = navController
+                )
             }
         }
     }
 }
 
 @Composable
-fun CategoryItem(name: String) {
+fun CategoryItem(categoryName: String, iconResId: Int, navController: NavController) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(80.dp)
+            .padding(vertical = 4.dp)
+            .clickable {
+                Log.d("CategoryItem", "Clicked on $categoryName, navigating to category_products/$categoryName")
+                navController.navigate("category_products/$categoryName")
+            }
     ) {
         Box(
             modifier = Modifier
@@ -394,20 +423,27 @@ fun CategoryItem(name: String) {
                 .background(Color(0xFFF5F5F5)),
             contentAlignment = Alignment.Center
         ) {
-            // Category icon would go here
+            Image(
+                painter = painterResource(id = iconResId),
+                contentDescription = "$categoryName icon",
+                modifier = Modifier.size(24.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = name,
-            fontSize = 12.sp
+            text = categoryName,
+            fontSize = 12.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
 @Composable
-fun SectionHeader(title: String) {
+fun SectionHeader(title: String, onSeeAllClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -423,7 +459,7 @@ fun SectionHeader(title: String) {
             text = "See All",
             fontSize = 14.sp,
             color = Color.Gray,
-            modifier = Modifier.clickable { }
+            modifier = Modifier.clickable { onSeeAllClick() }
         )
     }
 }
@@ -551,53 +587,201 @@ fun ProductItem(product: Product, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFFF5F5F5))
+                .clip(RoundedCornerShape(16.dp))
         ) {
+            // Product Image
             if (product.images.isNotEmpty()) {
                 Image(
                     painter = rememberAsyncImagePainter(product.images.first()),
                     contentDescription = product.name,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
             } else {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFF5F5F5)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("No Image", color = Color.Gray)
                 }
             }
 
-            IconButton(
-                onClick = { isFavorite = !isFavorite },
+            // Favorite Button
+            Box(
                 modifier = Modifier
+                    .size(36.dp)
                     .align(Alignment.TopEnd)
-                    .padding(4.dp)
+                    .padding(8.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.8f))
+                    .clickable { isFavorite = !isFavorite },
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     contentDescription = "Favorite",
-                    tint = if (isFavorite) Color.Red else Color.Gray
+                    tint = if (isFavorite) Color.Red else Color.Gray,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = product.name,
-            fontSize = 14.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Product Info Section
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Product Name
             Text(
-                text = "$${product.price}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
+                text = product.name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+
+            // Rating Section
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = "Rating",
+                    tint = Color(0xFFFFD700), // Gold color for star
+                    modifier = Modifier.size(16.dp)
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Text(
+                    text = product.rating.toFloat().toString(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.Gray
+                )
+            }
+        }
+
+        // Price with bold styling
+        Text(
+            text = "$${product.price}",
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = Color(0xFF1E1E1E)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoryProductsScreen(
+    categoryName: String,
+    navController: NavController,
+    productViewModel: ProductViewModel = hiltViewModel()
+) {
+    // Chọn danh sách sản phẩm dựa trên categoryName sử dụng .collectAsState()
+    val products by when (categoryName) {
+        "Top Selling" -> productViewModel.topSellingProducts
+        "New In" -> productViewModel.newInProducts
+        "Trending" -> productViewModel.trendingProducts
+        else -> productViewModel.categoryProducts
+    }.collectAsState()
+
+    val isLoading by productViewModel.isLoading.collectAsState()
+    val errorMessage by productViewModel.errorMessage.collectAsState()
+
+    // Gọi hàm fetch tương ứng dựa trên categoryName
+    LaunchedEffect(categoryName) {
+        when (categoryName) {
+            "Top Selling" -> {
+                if (productViewModel.topSellingProducts.value.isEmpty()) {
+                    productViewModel.fetchTopSellingProducts()
+                }
+            }
+            "New In" -> {
+                if (productViewModel.newInProducts.value.isEmpty()) {
+                    productViewModel.fetchNewInProducts()
+                }
+            }
+            "Trending" -> {
+                if (productViewModel.trendingProducts.value.isEmpty()) {
+                    productViewModel.fetchTrendingProducts()
+                }
+            }
+            else -> {
+                productViewModel.fetchProductsByCategory(categoryName)
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(categoryName) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "$categoryName (${products.size})",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator()
+                    } else if (errorMessage != null) {
+                        Text(
+                            text = "Error: $errorMessage",
+                            color = Color.Red
+                        )
+                    } else if (products.isEmpty()) {
+                        Text(
+                            text = "No $categoryName products available",
+                            color = Color.Gray
+                        )
+                    } else {
+                        HoodiesGrid(
+                            products = products,
+                            navController = navController,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 }

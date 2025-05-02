@@ -8,6 +8,8 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,7 +25,7 @@ fun BottomNavigationBar(navController: NavController) {
     val items = listOf(
         "home" to Icons.Default.Home,
         "notification" to Icons.Default.Notifications,
-        "order" to Icons.Default.FavoriteBorder,
+        "order" to Icons.Default.ShoppingBag,
         "setting" to Icons.Default.Person
     )
 

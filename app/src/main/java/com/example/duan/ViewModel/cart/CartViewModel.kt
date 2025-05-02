@@ -1,11 +1,13 @@
 package com.example.duan.ViewModel.cart
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.duan.Model.model.CartItem
 import com.example.duan.Model.repository.FirestoreRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -13,56 +15,90 @@ import javax.inject.Inject
 class CartViewModel @Inject constructor(
     private val repository: FirestoreRepository
 ) : ViewModel() {
-    val cartItems = mutableStateOf<List<CartItem>>(emptyList())
-    val error = mutableStateOf<String?>(null)
 
+    private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
+    val cartItems: StateFlow<List<CartItem>> = _cartItems.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    fun loadCartItems(userId: String) {
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private lateinit var userId: String
+
+    fun init(userId: String) {
+        this.userId = userId
+        loadCartItems()
+    }
+
+    fun loadCartItems() {
         viewModelScope.launch {
-            error.value = null
+            _isLoading.value = true
+            _error.value = null
             val result = repository.getCartItems(userId)
             if (result.isSuccess) {
-                cartItems.value = result.getOrNull() ?: emptyList()
+                _cartItems.value = result.getOrNull() ?: emptyList()
             } else {
-                error.value = result.exceptionOrNull()?.message ?: "Failed to load cart items"
+                _error.value = result.exceptionOrNull()?.message ?: "Failed to load cart items"
             }
+            _isLoading.value = false
         }
     }
 
-    fun addToCart(userId: String, item: CartItem) {
+    fun addToCart(item: CartItem) {
         viewModelScope.launch {
-            error.value = null
+            _isLoading.value = true
+            _error.value = null
             val result = repository.addToCart(userId, item)
             if (result.isSuccess) {
-                loadCartItems(userId) // Cập nhật lại danh sách sau khi thêm
+                loadCartItems() // Cập nhật lại danh sách sau khi thêm
             } else {
-                error.value = result.exceptionOrNull()?.message ?: "Failed to add to cart"
+                _error.value = result.exceptionOrNull()?.message ?: "Failed to add to cart"
             }
+            _isLoading.value = false
         }
     }
 
-    fun removeFromCart(userId: String, item: CartItem) {
+    fun removeFromCart(itemId: String) {
         viewModelScope.launch {
-            error.value = null
-            val result = repository.deleteCartItem(userId, item.id)
+            _isLoading.value = true
+            _error.value = null
+            val result = repository.deleteCartItem(userId, itemId)
             if (result.isSuccess) {
-                loadCartItems(userId) // Cập nhật lại danh sách sau khi xóa
+                loadCartItems() // Cập nhật lại danh sách sau khi xóa
             } else {
-                error.value = result.exceptionOrNull()?.message ?: "Failed to remove from cart"
+                _error.value = result.exceptionOrNull()?.message ?: "Failed to remove from cart"
             }
+            _isLoading.value = false
         }
     }
 
-    fun updateQuantity(userId: String?, item: CartItem, newQuantity: Int) {
+    fun updateQuantity(itemId: String, newQuantity: Int) {
         viewModelScope.launch {
-            error.value = null
-            val result = userId?.let { repository.updateCartItemQuantity(it, item.id, newQuantity) }
-            if (result!!.isSuccess) {
-                loadCartItems(userId) // Cập nhật lại danh sách sau khi cập nhật
+            _isLoading.value = true
+            _error.value = null
+            val result = repository.updateCartItemQuantity(userId, itemId, newQuantity)
+            if (result.isSuccess) {
+                loadCartItems() // Cập nhật lại danh sách sau khi cập nhật
             } else {
-                error.value = result.exceptionOrNull()?.message ?: "Failed to update quantity"
+                _error.value = result.exceptionOrNull()?.message ?: "Failed to update quantity"
             }
+            _isLoading.value = false
+        }
+    }
+
+    fun clearCart() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            val result = repository.clearCart(userId)
+            if (result.isSuccess) {
+                _cartItems.value = emptyList()
+            } else {
+                _error.value = result.exceptionOrNull()?.message ?: "Failed to clear cart"
+            }
+            _isLoading.value = false
         }
     }
 }

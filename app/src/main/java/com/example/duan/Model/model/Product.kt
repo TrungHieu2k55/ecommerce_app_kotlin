@@ -15,6 +15,8 @@ data class Product(
     val rating: Double = 0.0,
     val sizes: List<String> = emptyList(),
     val colors: List<String> = emptyList(),
+    val brand: String? = null,
+    val gender: String? = null,
     val quantitySold: Int = 0, // Thêm: Số lượng đã bán
     val addedToCartCount: Int = 0 // Thêm: Số lần được thêm vào giỏ hàng
 ) {
