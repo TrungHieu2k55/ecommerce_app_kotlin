@@ -17,6 +17,8 @@ import androidx.navigation.navArgument
 import com.example.duan.Model.model.Order
 import com.example.duan.Model.model.Product
 import com.example.duan.View.Cart.MyCartScreen
+import com.example.duan.View.checkout.CheckoutScreen
+import com.example.duan.View.checkout.ShippingTypeScreen
 import com.example.duan.View.home.CategoryProductsScreen
 import com.example.duan.View.home.EditAddressScreen
 import com.example.duan.View.home.EditProfilePictureScreen
@@ -36,10 +38,8 @@ import com.example.duan.ViewModel.usecase.auth.RegisterScreen
 import com.google.gson.Gson
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
-import com.example.duan.View.home.OrderDetailScreen
 
 @Composable
 fun AppNavigation(
@@ -156,6 +156,34 @@ fun AppNavigation(
                     }
                 }
             }
+            composable(
+                "checkout/{userId}",
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                val cartViewModel: CartViewModel = hiltViewModel()
+                LaunchedEffect(userId) {
+                    cartViewModel.init(userId)
+                }
+                CheckoutScreen(
+                    userId = userId,
+                    cartViewModel = cartViewModel,
+                    navController = navController
+                )
+            }
+            composable(
+                "payment_methods/{userId}",
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                val totalCost = navController.previousBackStackEntry?.arguments?.getString("totalCost")?.toDoubleOrNull() ?: 0.0
+                PaymentMethodsScreen(
+                    navController = navController,
+                    authViewModel = hiltViewModel(),
+                    userId = userId,
+                    totalCost = totalCost
+                )
+            }
             composable("order_details/{orderJson}") { backStackEntry ->
                 val orderJson = backStackEntry.arguments?.getString("orderJson")
                 val decodedOrderJson = orderJson?.let {
@@ -164,21 +192,35 @@ fun AppNavigation(
                 val order = decodedOrderJson?.let {
                     Gson().fromJson(it, Order::class.java)
                 }
-//                if (order != null) {
-//                    OrderDetailScreen(
-//                        navController = navController,
-//                        order = order
-//                    )
-//                } else {
-//                    LaunchedEffect(Unit) {
-//                        navController.navigate("order") {
-//                            popUpTo("main") { inclusive = false }
-//                        }
-//                    }
-//                }
+                // if (order != null) {
+                //     OrderDetailScreen(
+                //         navController = navController,
+                //         order = order
+                //     )
+                // } else {
+                //     LaunchedEffect(Unit) {
+                //         navController.navigate("order") {
+                //             popUpTo("main") { inclusive = false }
+                //         }
+                //     }
+                // }
+            }
+            composable("shipping_type") {
+                ShippingTypeScreen(
+                    navController = navController,
+                    onShippingSelected = { selectedOption ->
+                        val optionMap = mapOf(
+                            "id" to selectedOption.id,
+                            "name" to selectedOption.name,
+                            "estimatedArrival" to selectedOption.estimatedArrival,
+                            "deliveryFee" to selectedOption.deliveryFee,
+                            "address" to selectedOption.address
+                        )
+                        navController.previousBackStackEntry?.savedStateHandle?.set("selectedShippingOption", optionMap)
+                    }
+                )
             }
             composable("edit_profile") { EditProfilePictureScreen(navController, authViewModel) }
-            composable("payment_methods") { PaymentMethodsScreen(navController, authViewModel) }
             composable("order_history") { OrderHistoryScreen(navController, authViewModel) }
             composable("edit_address") { EditAddressScreen(navController, authViewModel) }
         }

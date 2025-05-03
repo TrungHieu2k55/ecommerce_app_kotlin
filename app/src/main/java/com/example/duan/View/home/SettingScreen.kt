@@ -37,6 +37,7 @@ fun SettingScreen(navController: NavController, authViewModel: AuthViewModel) {
 
     // Collect userProfile StateFlow
     val userProfile by authViewModel.userProfile.collectAsState()
+    val userId = authViewModel.getCurrentUserId() // Lấy userId từ AuthViewModel
 
     Scaffold(
         bottomBar = { BottomNavigationBar(navController = navController) }
@@ -185,7 +186,13 @@ fun SettingScreen(navController: NavController, authViewModel: AuthViewModel) {
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
                         SettingItem("Wishlist") { navController.navigate("wishlist") }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-                        SettingItem("Payment") { navController.navigate("payment_methods") }
+                        SettingItem("Payment") {
+                            userId?.let {
+                                navController.navigate("payment_methods/$it")
+                            } ?: run {
+                                Log.e("SettingScreen", "UserId is null, cannot navigate to payment_methods")
+                            }
+                        }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
                         SettingItem("Order History") { navController.navigate("order_history") }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
