@@ -47,7 +47,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.activity.compose) // Đã là 1.9.0
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -71,42 +71,42 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    implementation("androidx.compose.material:material-icons-extended:1.5.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("com.google.firebase:firebase-auth:22.1.1")
-    implementation("com.google.android.gms:play-services-auth:20.7.0")
-    implementation("com.google.dagger:hilt-android:2.50")
-    kapt("com.google.dagger:hilt-android-compiler:2.50")
+    implementation("androidx.compose.material:material-icons-extended:1.6.8") // Cập nhật lên phiên bản mới nhất
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4") // Cập nhật lên phiên bản mới nhất
+    implementation("com.google.firebase:firebase-auth:23.0.0") // Cập nhật lên phiên bản mới nhất
+    implementation("com.google.android.gms:play-services-auth:21.2.0") // Cập nhật lên phiên bản mới nhất
+    implementation("com.google.dagger:hilt-android:2.51.1") // Cập nhật lên phiên bản mới nhất
+    kapt("com.google.dagger:hilt-android-compiler:2.51.1") // Phải khớp với hilt-android
 
-
-    // 🔥 Hilt ViewModel support
+    // Hilt ViewModel support
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
-    implementation("com.facebook.android:facebook-android-sdk:[4,5)")
-    implementation("com.facebook.android:facebook-android-sdk:16.0.0")
-    implementation("com.facebook.android:facebook-login:latest.release")
-
+    // Chỉ giữ phiên bản mới nhất của Facebook SDK để tránh xung đột
+    implementation("com.facebook.android:facebook-android-sdk:16.3.0") // Cập nhật lên phiên bản mới nhất
+    implementation("com.facebook.android:facebook-login:16.3.0")
 
     // Coil for Jetpack Compose
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    //cloudinary
+    // Cloudinary
     implementation("com.cloudinary:cloudinary-android:3.0.2")
 
-    //json
-    implementation("io.ktor:ktor-client-core:2.3.8")
-    implementation("io.ktor:ktor-client-cio:2.3.8")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.8")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.8")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    // Ktor JSON
+    implementation("io.ktor:ktor-client-core:2.3.12") // Cập nhật lên phiên bản mới nhất
+    implementation("io.ktor:ktor-client-cio:2.3.12")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1") // Cập nhật lên phiên bản mới nhất
 
     // Firebase Firestore
-    implementation("com.google.firebase:firebase-firestore-ktx:24.10.0")
+    implementation("com.google.firebase:firebase-firestore-ktx:25.1.1") // Cập nhật lên phiên bản mới nhất
 
-    // Coroutines hỗ trợ Firestore
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
-    // Các dependency khác (đã có trong project của bạn)
-    implementation("io.coil-kt:coil-compose:2.7.0") // Để hiển thị hình ảnh
+    // Retrofit
+    implementation("com.squareup.retrofit2:retrofit:2.11.0") // Cập nhật lên phiên bản mới nhất
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("androidx.browser:browser:1.8.0")
 }

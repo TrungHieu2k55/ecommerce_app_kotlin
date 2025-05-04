@@ -1,6 +1,7 @@
 package com.example.duan.View.navigation
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -14,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.example.duan.Model.model.Order
 import com.example.duan.Model.model.Product
 import com.example.duan.View.Cart.MyCartScreen
@@ -38,12 +40,23 @@ import com.example.duan.ViewModel.usecase.auth.RegisterScreen
 import com.google.gson.Gson
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.navigation.NavController
 
 @Composable
 fun AppNavigation(
-    authViewModel: AuthViewModel = hiltViewModel()
+    authViewModel: AuthViewModel = hiltViewModel(),
+    moMoResultLauncher: ActivityResultLauncher<Intent>,
+    initialIntent: Intent?
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -53,6 +66,52 @@ fun AppNavigation(
 
     val userId = authViewModel.getCurrentUserId()
     val userProfile by authViewModel.userProfile.collectAsState()
+
+    // Hàm xử lý intent (deeplink PayPal)
+    fun handleIntent(intent: Intent?) {
+        intent?.data?.let { uri ->
+            Log.d("PayPal", "Return URI: $uri")
+            if (uri.toString().startsWith("yourappscheme://paypal")) {
+                val paymentId = uri.getQueryParameter("paymentId") ?: ""
+                val status = uri.getQueryParameter("status") ?: ""
+                val totalCost = uri.getQueryParameter("amount")?.toDoubleOrNull() ?: 0.0
+                if (status == "COMPLETED") {
+                    Toast.makeText(context, "PayPal payment successful", Toast.LENGTH_LONG).show()
+                    if (paymentId.isNotEmpty()) {
+                        val encodedPaymentId = URLEncoder.encode(paymentId, StandardCharsets.UTF_8.toString())
+                        val route = "payment_methods/$encodedPaymentId?totalCost=$totalCost"
+                        Log.d("Navigation", "Navigating to: $route")
+                        navController.navigate(route)
+                    }
+                } else {
+                    val message = uri.getQueryParameter("message") ?: "Unknown error"
+                    Toast.makeText(context, "PayPal payment failed: $status - $message", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Xử lý intent ban đầu
+    LaunchedEffect(initialIntent) {
+        handleIntent(initialIntent)
+    }
+
+    // Lắng nghe các Intent mới
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val activity = context as? ComponentActivity
+                activity?.intent?.let { newIntent ->
+                    handleIntent(newIntent)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val startDestination = when {
         isFirstLaunch -> "wel"
@@ -168,21 +227,30 @@ fun AppNavigation(
                 CheckoutScreen(
                     userId = userId,
                     cartViewModel = cartViewModel,
+                    authViewModel = authViewModel,
                     navController = navController
                 )
             }
             composable(
-                "payment_methods/{userId}",
-                arguments = listOf(navArgument("userId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val userId = backStackEntry.arguments?.getString("userId") ?: ""
-                val totalCost = navController.previousBackStackEntry?.arguments?.getString("totalCost")?.toDoubleOrNull() ?: 0.0
-                PaymentMethodsScreen(
-                    navController = navController,
-                    authViewModel = hiltViewModel(),
-                    userId = userId,
-                    totalCost = totalCost
+                route = "payment_methods/{paymentId}?totalCost={totalCost}",
+                arguments = listOf(
+                    navArgument("paymentId") { type = NavType.StringType },
+                    navArgument("totalCost") {
+                        type = NavType.StringType
+                        defaultValue = "0.0"
+                    }
+                ),
+                deepLinks = listOf(
+                    navDeepLink {
+                        uriPattern = "yourappscheme://paypal/payment_methods/{paymentId}?totalCost={totalCost}"
+                    }
                 )
+            ) { backStackEntry ->
+                val paymentId = backStackEntry.arguments?.getString("paymentId") ?: ""
+                val totalCostStr = backStackEntry.arguments?.getString("totalCost") ?: "0.0"
+                val totalCost = totalCostStr.toDoubleOrNull() ?: 0.0
+                val userId = authViewModel.getCurrentUserId() ?: ""
+                PaymentMethodsScreen(navController, authViewModel, userId, totalCost, moMoResultLauncher)
             }
             composable("order_details/{orderJson}") { backStackEntry ->
                 val orderJson = backStackEntry.arguments?.getString("orderJson")
@@ -192,18 +260,6 @@ fun AppNavigation(
                 val order = decodedOrderJson?.let {
                     Gson().fromJson(it, Order::class.java)
                 }
-                // if (order != null) {
-                //     OrderDetailScreen(
-                //         navController = navController,
-                //         order = order
-                //     )
-                // } else {
-                //     LaunchedEffect(Unit) {
-                //         navController.navigate("order") {
-                //             popUpTo("main") { inclusive = false }
-                //         }
-                //     }
-                // }
             }
             composable("shipping_type") {
                 ShippingTypeScreen(

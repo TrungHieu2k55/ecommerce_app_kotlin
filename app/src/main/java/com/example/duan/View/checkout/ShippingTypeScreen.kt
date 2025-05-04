@@ -30,9 +30,9 @@ fun ShippingTypeScreen(
     val sdf = SimpleDateFormat("dd MMMM yyyy", Locale("vi", "VN"))
 
     val shippingOptions = listOf(
-        ShippingOption("1", "Giao hàng tiết kiệm", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 5) }.time), 20000.0),
-        ShippingOption("2", "Giao hàng nhanh", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 3) }.time), 35000.0),
-        ShippingOption("3", "Giao hàng hỏa tốc", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 1) }.time), 50000.0),
+        ShippingOption("1", "Giao hàng tiết kiệm", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 5) }.time), 1.0),
+        ShippingOption("2", "Giao hàng nhanh", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 3) }.time), 1.5),
+        ShippingOption("3", "Giao hàng hỏa tốc", sdf.format(currentDate.apply { add(Calendar.DAY_OF_YEAR, 1) }.time), 2.0),
     )
 
     var selectedOption by remember { mutableStateOf<ShippingOption?>(null) }

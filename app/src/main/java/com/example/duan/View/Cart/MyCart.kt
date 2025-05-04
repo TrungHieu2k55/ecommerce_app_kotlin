@@ -94,7 +94,7 @@ fun MyCartScreen(
         couponViewModel.fetchCoupons()
     }
 
-    // Tính toán tổng chi phí trực tiếp từ cartItems
+    // Tính toán tổng chi phí trực tiếp từ cartItems (đơn vị USD)
     val subTotal = remember(items) {
         items.sumOf { (it.price ?: 0L).toDouble() * it.quantity }
     }
@@ -266,7 +266,7 @@ fun MyCartScreen(
             }
             appliedCoupon?.let {
                 Text(
-                    text = "Applied Coupon: ${it.code} (-${formattedDiscount} VNĐ)",
+                    text = "Applied Coupon: ${it.code} (-${formattedDiscount} USD)",
                     color = Color.Green,
                     fontSize = 14.sp,
                     modifier = Modifier
@@ -278,11 +278,11 @@ fun MyCartScreen(
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp)
             ) {
-                OrderSummaryRow(title = "Sub-Total", value = "$formattedSubTotal VNĐ")
-                OrderSummaryRow(title = "Delivery Fee", value = "$formattedDeliveryFee VNĐ")
+                OrderSummaryRow(title = "Sub-Total", value = "$formattedSubTotal USD")
+                OrderSummaryRow(title = "Delivery Fee", value = "$formattedDeliveryFee USD")
                 OrderSummaryRow(
                     title = "Discount",
-                    value = "-$formattedDiscount VNĐ",
+                    value = "-$formattedDiscount USD",
                     valueColor = redColor
                 )
                 Divider(
@@ -292,7 +292,7 @@ fun MyCartScreen(
                 )
                 OrderSummaryRow(
                     title = "Total Cost",
-                    value = "$formattedTotalCost VNĐ",
+                    value = "$formattedTotalCost USD",
                     isBold = true
                 )
             }
@@ -325,7 +325,7 @@ fun MyCartScreen(
                         orderId = System.currentTimeMillis().toString(),
                         userId = userId,
                         items = orderItems,
-                        totalPrice = (totalCost * 100).toLong(),
+                        totalPrice = (totalCost * 100).toLong(), // Lưu totalPrice ở USD (đã nhân 100 để bỏ thập phân)
                         status = "Processing",
                         createdAt = Timestamp.now(),
                         shippingAddress = "Address",
@@ -340,7 +340,7 @@ fun MyCartScreen(
                         .set(order)
                         .addOnSuccessListener {
                             orderError = null
-                            navController.navigate("checkout/$userId") // Truyền userId khi điều hướng
+                            navController.navigate("checkout/$userId")
                         }
                         .addOnFailureListener { e ->
                             orderError = "Failed to place order: ${e.message}"
@@ -463,15 +463,15 @@ fun CouponItem(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = if (coupon.type == "percentage")
-                        "Get ${coupon.discount}% off (up to ${coupon.maxDiscount.toDouble().toStringDecimal()} VNĐ)"
+                        "Get ${coupon.discount}% off (up to ${coupon.maxDiscount.toDouble().toStringDecimal()} USD)"
                     else
-                        "Get ${coupon.discount.toDouble().toStringDecimal()} VNĐ off",
+                        "Get ${coupon.discount.toDouble().toStringDecimal()} USD off",
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Min. order: ${coupon.minOrderValue.toDouble().toStringDecimal()} VNĐ",
+                    text = "Min. order: ${coupon.minOrderValue.toDouble().toStringDecimal()} USD",
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
@@ -543,7 +543,7 @@ fun CartItem(
 
             val formattedPrice = remember(item.price) { (item.price ?: 0L).toDouble() }
             Text(
-                text = "${String.format("%.2f", formattedPrice)} VNĐ",
+                text = "${String.format("%.2f", formattedPrice)} USD",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )

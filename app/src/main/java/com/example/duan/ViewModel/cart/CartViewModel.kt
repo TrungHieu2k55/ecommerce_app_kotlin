@@ -1,9 +1,14 @@
 package com.example.duan.ViewModel.cart
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.duan.Model.api.capturePayPalPayment
+import com.example.duan.Model.api.createPayPalPayment
 import com.example.duan.Model.model.CartItem
 import com.example.duan.Model.repository.FirestoreRepository
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -125,5 +130,71 @@ class CartViewModel @Inject constructor(
         }
     }
 
+    // Hàm xử lý thanh toán PayPal
+    fun processPayPalPayment(totalCost: Double, onApprovalUrl: (String?) -> Unit) {
+        userId?.let { uid ->
+            viewModelScope.launch {
+                _isLoading.value = true
+                _error.value = null
+                try {
+                    val approvalUrl = createPayPalPayment(uid, totalCost)
+                    onApprovalUrl(approvalUrl)
+                } catch (e: Exception) {
+                    Log.e("CartViewModel", "Error creating PayPal payment: $e")
+                    _error.value = "Failed to create PayPal payment: ${e.message}"
+                    onApprovalUrl(null)
+                } finally {
+                    _isLoading.value = false
+                }
+            }
+        } ?: run {
+            _error.value = "User ID not initialized"
+            onApprovalUrl(null)
+        }
+    }
 
+    // Hàm xác nhận thanh toán và cập nhật trạng thái đơn hàng
+    fun confirmPayPalPayment(orderId: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val captureResponse = capturePayPalPayment(orderId)
+                if (captureResponse?.status == "COMPLETED") {
+                    // Cập nhật trạng thái đơn hàng trong Firestore
+                    userId?.let { uid ->
+                        val orderRef = Firebase.firestore.collection("users")
+                            .document(uid)
+                            .collection("orders")
+                            .document(orderId)
+                        orderRef.update(
+                            mapOf(
+                                "status" to "Completed",
+                                "paymentId" to captureResponse.id,
+                                "paymentTime" to com.google.firebase.Timestamp.now()
+                            )
+                        ).addOnSuccessListener {
+                            onResult(true, orderId)
+                        }.addOnFailureListener { e ->
+                            Log.e("CartViewModel", "Error updating order status: $e")
+                            _error.value = "Failed to update order status: ${e.message}"
+                            onResult(false, null)
+                        }
+                    } ?: run {
+                        _error.value = "User ID not initialized"
+                        onResult(false, null)
+                    }
+                } else {
+                    _error.value = "Payment capture failed: ${captureResponse?.status}"
+                    onResult(false, null)
+                }
+            } catch (e: Exception) {
+                Log.e("CartViewModel", "Error capturing PayPal payment: $e")
+                _error.value = "Failed to capture PayPal payment: ${e.message}"
+                onResult(false, null)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
 }

@@ -56,16 +56,16 @@ fun CheckoutScreen(
                 "1",
                 "Giao hàng tiết kiệm",
                 "07 Tháng 05 2025",
-                20000.0
+                200.0
             )
         )
     }
 
     val discount by cartViewModel.discount.collectAsState()
 
-    // Tính toán tổng chi phí trực tiếp từ cartItems
+    // Tính toán tổng chi phí trực tiếp từ cartItems (đơn vị USD)
     val subTotal = remember(items) {
-        items.sumOf { (it.price ?: 0L).toDouble() / 100 * it.quantity }
+        items.sumOf { (it.price ?: 0L).toDouble() * it.quantity }
     }
     val deliveryFee = selectedShippingOption.deliveryFee
     val totalCost = subTotal + deliveryFee - discount
@@ -250,21 +250,21 @@ fun CheckoutScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "Sub-Total", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "$formattedSubTotal VNĐ", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "$formattedSubTotal USD", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "Delivery Fee", fontSize = 14.sp, color = Color.Gray)
-                    Text(text = "$formattedDeliveryFee VNĐ", fontSize = 14.sp, color = Color.Gray)
+                    Text(text = "$formattedDeliveryFee USD", fontSize = 14.sp, color = Color.Gray)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "Discount", fontSize = 14.sp, color = Color.Gray)
-                    Text(text = "-$formattedDiscount VNĐ", fontSize = 14.sp, color = Color.Red)
+                    Text(text = "-$formattedDiscount USD", fontSize = 14.sp, color = Color.Red)
                 }
                 Divider(
                     color = Color.LightGray,
@@ -276,7 +276,7 @@ fun CheckoutScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "Total Cost", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "$formattedTotalCost VNĐ", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "$formattedTotalCost USD", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
@@ -333,9 +333,9 @@ fun CheckoutItem(item: CartItem) {
                 fontSize = 14.sp,
                 color = Color.Gray
             )
-            val formattedPrice = remember(item.price) { (item.price ?: 0L).toDouble() / 100 }
+            val formattedPrice = remember(item.price) { (item.price ?: 0L).toDouble() }
             Text(
-                text = "${String.format("%.2f", formattedPrice)} VNĐ",
+                text = "${String.format("%.2f", formattedPrice)} USD",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )

@@ -1,5 +1,6 @@
 package com.example.duan.View.home
 
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Money
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
@@ -23,11 +23,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.duan.Model.api.createPayPalPayment
 import com.example.duan.ViewModel.usecase.auth.AuthViewModel
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,11 +39,14 @@ fun PaymentMethodsScreen(
     navController: NavController,
     authViewModel: AuthViewModel,
     userId: String,
-    totalCost: Double
+    totalCost: Double,
+    moMoResultLauncher: ActivityResultLauncher<Intent>
 ) {
     val paymentMethods = authViewModel.userProfile.value?.paymentMethods ?: emptyList()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var selectedPaymentMethod by remember { mutableStateOf<String?>(null) }
+    var approvalUrl by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -65,7 +72,6 @@ fun PaymentMethodsScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Danh sách phương thức thanh toán đã liên kết (nếu có)
             if (paymentMethods.isNotEmpty()) {
                 Text(
                     text = "Linked Payment Methods",
@@ -109,7 +115,6 @@ fun PaymentMethodsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Phần Credit & Debit Card
             Text(
                 text = "Payment Options",
                 fontSize = 16.sp,
@@ -161,7 +166,6 @@ fun PaymentMethodsScreen(
                 }
             }
 
-            // Thêm tùy chọn COD (Cash on Delivery)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -207,7 +211,6 @@ fun PaymentMethodsScreen(
                 }
             }
 
-            // Phần More Payment Options
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -218,42 +221,71 @@ fun PaymentMethodsScreen(
             ) {
                 Column {
                     PaymentOptionItem(
-                        icon = Icons.Default.Lock,
-                        name = "Paypal",
-                        onLinkClick = {
-                            selectedPaymentMethod = "Paypal"
-                            Toast.makeText(context, "PayPal integration not implemented", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                    Divider()
-                    PaymentOptionItem(
                         icon = Icons.Default.Phone,
-                        name = "MoMo",
+                        name = "PayPal",
                         onLinkClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse("momo://")
-                                    setPackage("com.mservice.momotransfer")
+                            if (totalCost <= 0) {
+                                Log.d("PaymentMethodsScreen", "Total cost is <= 0, showing Toast")
+                                Toast.makeText(context, "Số tiền phải lớn hơn 0", Toast.LENGTH_LONG).show()
+                            } else {
+                                coroutineScope.launch {
+                                    try {
+                                        val approvalUrlFromApi = createPayPalPayment(userId, totalCost)
+                                        if (approvalUrlFromApi.isNullOrEmpty()) {
+                                            Log.e("PaymentMethodsScreen", "Approval URL is null or empty")
+                                            Toast.makeText(context, "Không thể tạo URL thanh toán PayPal", Toast.LENGTH_LONG).show()
+                                            return@launch
+                                        }
+                                        Log.d("PayPal", "Approval URL: $approvalUrlFromApi")
+                                        approvalUrl = approvalUrlFromApi
+                                        selectedPaymentMethod = "PayPal"
+                                        val customTabsIntent = CustomTabsIntent.Builder().build()
+                                        customTabsIntent.launchUrl(context, Uri.parse(approvalUrlFromApi))
+                                        approvalUrl = null // Reset sau khi mở
+                                    } catch (e: Exception) {
+                                        Log.e("PaymentMethodsScreen", "PayPal payment failed: ${e.toString()}", e)
+                                        val errorMessage = e.message ?: "Lỗi không xác định"
+                                        Toast.makeText(context, "Thanh toán PayPal thất bại: $errorMessage", Toast.LENGTH_LONG).show()
+                                    }
                                 }
-                                context.startActivity(intent)
-                                selectedPaymentMethod = "MoMo"
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Please install MoMo app", Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            approvalUrl?.let { url ->
+                Log.d("PaymentMethodsScreen", "Displaying approval URL: $url")
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = url,
+                        fontSize = 14.sp,
+                        color = Color.Blue,
+                        modifier = Modifier.clickable {
+                            val customTabsIntent = CustomTabsIntent.Builder().build()
+                            customTabsIntent.launchUrl(context, Uri.parse(url))
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Click to open in browser",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Nút Confirm Payment
             Button(
                 onClick = {
                     if (selectedPaymentMethod != null) {
-                        // Giả lập xác nhận thanh toán (thay bằng điều hướng đến màn hình xác nhận thực tế)
-                        Toast.makeText(context, "Payment confirmed with $selectedPaymentMethod. Total: ${"%.2f".format(totalCost)} VNĐ", Toast.LENGTH_LONG).show()
-                        // Điều hướng về OrderScreen hoặc màn hình xác nhận (chưa có, giả lập popBackStack)
+                        Toast.makeText(context, "Payment confirmed with $selectedPaymentMethod. Total: ${"%.2f".format(totalCost)} USD", Toast.LENGTH_LONG).show()
                         navController.popBackStack("checkout/$userId", inclusive = false)
                     } else {
                         Toast.makeText(context, "Please select a payment method", Toast.LENGTH_SHORT).show()
@@ -291,7 +323,7 @@ fun PaymentOptionItem(
             .padding(16.dp)
             .clickable { onLinkClick() }
             .background(
-                if (name == "Paypal" || name == "MoMo") Color.White else Color(0xFFE3F2FD)
+                if (name == "PayPal") Color.White else Color(0xFFE3F2FD)
             ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
