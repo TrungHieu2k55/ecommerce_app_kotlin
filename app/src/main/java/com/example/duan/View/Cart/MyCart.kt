@@ -31,18 +31,12 @@ import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import com.example.duan.Model.model.CartItem
 import com.example.duan.Model.model.Coupon
-import com.example.duan.Model.model.Order
-import com.example.duan.Model.model.OrderItem
 import com.example.duan.ViewModel.cart.CartViewModel
 import com.example.duan.ViewModel.usecase.product.CouponViewModel
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
-import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Hàm hỗ trợ chuyển đổi String thành Date
 fun parseDate(dateString: String?): Date? {
     if (dateString.isNullOrEmpty()) return null
     return try {
@@ -62,50 +56,48 @@ fun MyCartScreen(
     userId: String,
     couponViewModel: CouponViewModel = hiltViewModel()
 ) {
-    // Màu sắc
     val buttonColor = Color(0xFF29B6F6)
     val lightGrayColor = Color(0xFFF5F5F5)
     val redColor = Color(0xFFFF6B6B)
 
-    // Trạng thái mã giảm giá
     var promoCode by remember { mutableStateOf("") }
     var discount by remember { mutableStateOf(0.0) }
+    var isApplyingCoupon by remember { mutableStateOf(false) }
+    var cartError by remember { mutableStateOf<String?>(null) }
+
     val appliedCoupon by couponViewModel.appliedCoupon.collectAsState()
     val couponError by couponViewModel.errorMessage.collectAsState()
+    val coupons by couponViewModel.coupons.collectAsState()
+    val items by cartViewModel.cartItems.collectAsState()
+    val isLoading by cartViewModel.isLoading.collectAsState()
+    val error by cartViewModel.error.collectAsState()
 
-    // Trạng thái hiển thị danh sách mã giảm giá
-    val sheetState = rememberModalBottomSheetState()
-    var showCouponsSheet by remember { mutableStateOf(false) }
-
-    // Trạng thái thông báo lỗi khi đặt hàng
-    var orderError by remember { mutableStateOf<String?>(null) }
-
-    // Khởi tạo ViewModel với userId
     LaunchedEffect(userId) {
         cartViewModel.init(userId)
     }
-
-    // Lấy danh sách sản phẩm từ ViewModel
-    val items by cartViewModel.cartItems.collectAsState()
-
-    // Lấy danh sách mã giảm giá
-    val coupons by couponViewModel.coupons.collectAsState()
     LaunchedEffect(Unit) {
         couponViewModel.fetchCoupons()
     }
 
-    // Tính toán tổng chi phí trực tiếp từ cartItems (đơn vị USD)
     val subTotal = remember(items) {
-        items.sumOf { (it.price ?: 0L).toDouble() * it.quantity }
+        items.sumOf { cartItem ->
+            val price = cartItem.price ?: 0L
+            if (price == 0L) {
+                Log.w("MyCartScreen", "Price is null for item: ${cartItem.productName}")
+            }
+            price.toDouble() * cartItem.quantity
+        }
     }
-    val deliveryFee = 0.0
+    val deliveryFee = 0.0 // Sẽ được cập nhật trong CheckoutScreen
     val totalCost = subTotal + deliveryFee - discount
 
-    // Định dạng giá trị
     val formattedSubTotal = remember(subTotal) { "%.2f".format(subTotal) }
     val formattedDeliveryFee = remember(deliveryFee) { "%.2f".format(deliveryFee) }
     val formattedDiscount = remember(discount) { "%.2f".format(discount) }
     val formattedTotalCost = remember(totalCost) { "%.2f".format(totalCost) }
+
+    val sheetState = rememberModalBottomSheetState()
+    var showCouponsSheet by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -136,67 +128,100 @@ fun MyCartScreen(
                         tint = Color.Black
                     )
                 }
-
                 Spacer(modifier = Modifier.weight(1f))
-
                 Text(
                     text = "My Cart",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
-
                 Spacer(modifier = Modifier.weight(1f))
             }
 
-            LazyColumn(
-                modifier = Modifier.weight(1f)
-            ) {
-                items(items, key = { it.id }) { item ->
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        confirmValueChange = { value ->
-                            if (value == SwipeToDismissBoxValue.EndToStart) {
-                                cartViewModel.removeFromCart(item.id)
-                                true
-                            } else {
-                                false
-                            }
-                        }
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = buttonColor)
+                }
+            } else if (error != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = error ?: "Unknown error",
+                        color = Color.Red,
+                        fontSize = 16.sp
                     )
-
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromStartToEnd = false,
-                        enableDismissFromEndToStart = true,
-                        backgroundContent = {
-                            val color by animateColorAsState(
-                                targetValue = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) redColor else Color.Transparent
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(color)
-                                    .padding(end = 16.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
+                }
+            } else if (items.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Giỏ hàng trống",
+                        color = Color.Gray,
+                        fontSize = 16.sp
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(items, key = { it.id }) { item ->
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.EndToStart) {
+                                    cartViewModel.removeFromCart(item.id)
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                        )
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            enableDismissFromEndToStart = true,
+                            backgroundContent = {
+                                val color by animateColorAsState(
+                                    targetValue = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) redColor else Color.Transparent
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(color)
+                                        .padding(end = 16.dp),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            },
+                            content = {
+                                CartItem(
+                                    item = item,
+                                    buttonColor = buttonColor,
+                                    onQuantityChange = { newQuantity ->
+                                        cartViewModel.updateQuantity(item.id, newQuantity)
+                                    }
                                 )
                             }
-                        },
-                        content = {
-                            CartItem(
-                                item = item,
-                                buttonColor = buttonColor,
-                                onQuantityChange = { newQuantity ->
-                                    cartViewModel.updateQuantity(item.id, newQuantity)
-                                }
-                            )
-                        }
-                    )
-                    Divider(color = Color.LightGray, thickness = 1.dp)
+                        )
+                        Divider(color = Color.LightGray, thickness = 1.dp)
+                    }
                 }
             }
 
@@ -232,22 +257,28 @@ fun MyCartScreen(
                             }
                             Button(
                                 onClick = {
-                                    if (promoCode.isNotBlank()) {
-                                        couponViewModel.applyCoupon(promoCode, (subTotal * 100).toLong()) { discountAmount ->
+                                    if (promoCode.isNotBlank() && !isApplyingCoupon) {
+                                        isApplyingCoupon = true
+                                        couponViewModel.applyCoupon(promoCode, subTotal.toLong()) { discountAmount ->
                                             discount = discountAmount.toDouble()
-                                            cartViewModel.setDiscount(discount) // Lưu discount vào ViewModel
+                                            cartViewModel.setDiscount(discount)
+                                            isApplyingCoupon = false
                                         }
                                     }
                                 },
+                                enabled = !isApplyingCoupon,
                                 colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
                                 shape = RoundedCornerShape(32.dp),
-                                modifier = Modifier
-                                    .height(40.dp)
+                                modifier = Modifier.height(40.dp)
                             ) {
-                                Text(
-                                    text = "Apply",
-                                    color = Color.White
-                                )
+                                if (isApplyingCoupon) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = Color.White
+                                    )
+                                } else {
+                                    Text(text = "Apply", color = Color.White)
+                                }
                             }
                         }
                     }
@@ -274,12 +305,28 @@ fun MyCartScreen(
                         .padding(bottom = 8.dp)
                 )
             }
+            error?.let {
+                Text(
+                    text = it,
+                    color = Color.Red,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 8.dp)
+                )
+            }
 
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp)
             ) {
-                OrderSummaryRow(title = "Sub-Total", value = "$formattedSubTotal USD")
-                OrderSummaryRow(title = "Delivery Fee", value = "$formattedDeliveryFee USD")
+                OrderSummaryRow(
+                    title = "Sub-Total",
+                    value = "$formattedSubTotal USD"
+                )
+                OrderSummaryRow(
+                    title = "Delivery Fee",
+                    value = "$formattedDeliveryFee USD"
+                )
                 OrderSummaryRow(
                     title = "Discount",
                     value = "-$formattedDiscount USD",
@@ -297,7 +344,7 @@ fun MyCartScreen(
                 )
             }
 
-            orderError?.let {
+            cartError?.let {
                 Text(
                     text = it,
                     color = Color.Red,
@@ -312,40 +359,14 @@ fun MyCartScreen(
 
             Button(
                 onClick = {
-                    val orderItems = items.map { cartItem ->
-                        OrderItem(
-                            productId = cartItem.productId,
-                            name = cartItem.productName,
-                            imageUrl = cartItem.image,
-                            quantity = cartItem.quantity,
-                            price = cartItem.price ?: 0L
-                        )
+                    if (items.isEmpty()) {
+                        cartError = "Giỏ hàng trống, không thể thanh toán"
+                        return@Button
                     }
-                    val order = Order(
-                        orderId = System.currentTimeMillis().toString(),
-                        userId = userId,
-                        items = orderItems,
-                        totalPrice = (totalCost * 100).toLong(), // Lưu totalPrice ở USD (đã nhân 100 để bỏ thập phân)
-                        status = "Processing",
-                        createdAt = Timestamp.now(),
-                        shippingAddress = "Address",
-                        couponCode = appliedCoupon?.code,
-                        discount = (discount * 100).toLong()
-                    )
-
-                    Firebase.firestore.collection("users")
-                        .document(userId)
-                        .collection("orders")
-                        .document(order.orderId)
-                        .set(order)
-                        .addOnSuccessListener {
-                            orderError = null
-                            navController.navigate("checkout/$userId")
-                        }
-                        .addOnFailureListener { e ->
-                            orderError = "Failed to place order: ${e.message}"
-                        }
+                    cartError = null
+                    navController.navigate("checkout/$userId")
                 },
+                enabled = !isLoading && items.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
@@ -379,7 +400,6 @@ fun MyCartScreen(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
-
                     if (coupons.isEmpty()) {
                         Text(
                             text = "No coupons available",
@@ -393,7 +413,7 @@ fun MyCartScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(300.dp),
+                                .heightIn(max = 400.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(coupons) { coupon ->
@@ -401,7 +421,7 @@ fun MyCartScreen(
                                     coupon = coupon,
                                     onApply = {
                                         promoCode = coupon.code
-                                        couponViewModel.applyCoupon(coupon.code, (subTotal * 100).toLong()) { discountAmount ->
+                                        couponViewModel.applyCoupon(coupon.code, subTotal.toLong()) { discountAmount ->
                                             discount = discountAmount.toDouble()
                                             cartViewModel.setDiscount(discount)
                                         }
@@ -411,9 +431,7 @@ fun MyCartScreen(
                             }
                         }
                     }
-
                     Spacer(modifier = Modifier.height(16.dp))
-
                     Button(
                         onClick = { showCouponsSheet = false },
                         colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
@@ -487,13 +505,11 @@ fun CouponItem(
                     color = Color.Gray
                 )
             }
-
             Button(
                 onClick = onApply,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF29B6F7)),
                 shape = RoundedCornerShape(28.dp),
-                modifier = Modifier
-                    .height(40.dp)
+                modifier = Modifier.height(40.dp)
             ) {
                 Text(
                     text = "Apply",
@@ -527,9 +543,7 @@ fun CartItem(
                 .clip(RoundedCornerShape(8.dp)),
             contentScale = ContentScale.Crop
         )
-
         Spacer(modifier = Modifier.width(16.dp))
-
         Column(
             modifier = Modifier.weight(1f)
         ) {
@@ -538,9 +552,7 @@ fun CartItem(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
-
             Spacer(modifier = Modifier.height(4.dp))
-
             val formattedPrice = remember(item.price) { (item.price ?: 0L).toDouble() }
             Text(
                 text = "${String.format("%.2f", formattedPrice)} USD",
@@ -548,7 +560,6 @@ fun CartItem(
                 fontWeight = FontWeight.Bold
             )
         }
-
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -570,14 +581,12 @@ fun CartItem(
                     color = Color.DarkGray
                 )
             }
-
             Text(
                 text = quantity.toString(),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 12.dp)
             )
-
             IconButton(
                 onClick = {
                     quantity++
@@ -617,7 +626,6 @@ fun OrderSummaryRow(
             fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
             color = Color.Gray
         )
-
         Text(
             text = value,
             fontSize = 16.sp,

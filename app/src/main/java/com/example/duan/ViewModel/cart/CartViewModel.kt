@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.duan.Model.api.capturePayPalPayment
 import com.example.duan.Model.api.createPayPalPayment
 import com.example.duan.Model.model.CartItem
-import com.example.duan.Model.repository.FirestoreRepository
+import com.example.duan.Model.repository.CartRepository
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,7 +18,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CartViewModel @Inject constructor(
-    private val repository: FirestoreRepository
+    private val cartRepository: CartRepository
 ) : ViewModel() {
 
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
@@ -34,29 +34,45 @@ class CartViewModel @Inject constructor(
     val discount: StateFlow<Double> = _discount.asStateFlow()
 
     private var userId: String? = null
+    private var firestoreListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     fun init(userId: String) {
         if (this.userId != userId) {
             this.userId = userId
-            loadCartItems()
+            setupFirestoreListener()
         }
     }
 
-    fun loadCartItems() {
+    private fun setupFirestoreListener() {
         userId?.let { uid ->
-            viewModelScope.launch {
-                _isLoading.value = true
-                _error.value = null
-                val result = repository.getCartItems(uid)
-                if (result.isSuccess) {
-                    _cartItems.value = result.getOrNull() ?: emptyList()
-                } else {
-                    _error.value = result.exceptionOrNull()?.message ?: "Failed to load cart items"
+            _isLoading.value = true
+            _error.value = null
+            firestoreListener?.remove() // Xóa listener cũ nếu có
+            firestoreListener = Firebase.firestore.collection("users")
+                .document(uid)
+                .collection("cart")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        _error.value = "Failed to load cart items: ${error.message}"
+                        _isLoading.value = false
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        val items = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                doc.toObject(CartItem::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                Log.e("CartViewModel", "Error parsing cart item: ${e.message}")
+                                null
+                            }
+                        }
+                        _cartItems.value = items
+                        _isLoading.value = false
+                    }
                 }
-                _isLoading.value = false
-            }
         } ?: run {
             _error.value = "User ID not initialized"
+            _isLoading.value = false
         }
     }
 
@@ -65,14 +81,24 @@ class CartViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoading.value = true
                 _error.value = null
-                val result = repository.addToCart(uid, item)
+                // Cập nhật tạm thời _cartItems để giao diện phản ánh ngay
+                val tempItem = item.copy(id = "temp_${System.currentTimeMillis()}")
+                val currentItems = _cartItems.value.toMutableList()
+                currentItems.add(tempItem)
+                _cartItems.value = currentItems
+
+                val result = cartRepository.addToCart(item)
                 if (result.isSuccess) {
-                    loadCartItems() // Cập nhật lại danh sách sau khi thêm
+                    // Không cần gọi loadCartItems vì snapshot listener sẽ cập nhật
                 } else {
                     _error.value = result.exceptionOrNull()?.message ?: "Failed to add to cart"
+                    // Hoàn tác cập nhật tạm thời nếu Firestore thất bại
+                    _cartItems.value = currentItems.filter { it.id != tempItem.id }
                 }
                 _isLoading.value = false
             }
+        } ?: run {
+            _error.value = "User ID not initialized"
         }
     }
 
@@ -81,10 +107,8 @@ class CartViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoading.value = true
                 _error.value = null
-                val result = repository.deleteCartItem(uid, itemId)
-                if (result.isSuccess) {
-                    loadCartItems() // Cập nhật lại danh sách sau khi xóa
-                } else {
+                val result = cartRepository.removeFromCart(itemId)
+                if (!result.isSuccess) {
                     _error.value = result.exceptionOrNull()?.message ?: "Failed to remove from cart"
                 }
                 _isLoading.value = false
@@ -97,11 +121,14 @@ class CartViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoading.value = true
                 _error.value = null
-                val result = repository.updateCartItemQuantity(uid, itemId, newQuantity)
-                if (result.isSuccess) {
-                    loadCartItems() // Cập nhật lại danh sách sau khi cập nhật
+                val item = _cartItems.value.find { it.id == itemId }?.copy(quantity = newQuantity)
+                if (item != null) {
+                    val result = cartRepository.updateCartItem(itemId, item)
+                    if (!result.isSuccess) {
+                        _error.value = result.exceptionOrNull()?.message ?: "Failed to update quantity"
+                    }
                 } else {
-                    _error.value = result.exceptionOrNull()?.message ?: "Failed to update quantity"
+                    _error.value = "Item not found"
                 }
                 _isLoading.value = false
             }
@@ -113,9 +140,10 @@ class CartViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoading.value = true
                 _error.value = null
-                val result = repository.clearCart(uid)
+                val result = cartRepository.clearCart(uid)
                 if (result.isSuccess) {
                     _cartItems.value = emptyList()
+                    Log.d("CartViewModel", "Cart cleared successfully for userId: $uid")
                 } else {
                     _error.value = result.exceptionOrNull()?.message ?: "Failed to clear cart"
                 }
@@ -130,30 +158,29 @@ class CartViewModel @Inject constructor(
         }
     }
 
-    // Hàm xử lý thanh toán PayPal
-    fun processPayPalPayment(totalCost: Double, onApprovalUrl: (String?) -> Unit) {
-        userId?.let { uid ->
-            viewModelScope.launch {
-                _isLoading.value = true
-                _error.value = null
-                try {
-                    val approvalUrl = createPayPalPayment(uid, totalCost)
-                    onApprovalUrl(approvalUrl)
-                } catch (e: Exception) {
-                    Log.e("CartViewModel", "Error creating PayPal payment: $e")
-                    _error.value = "Failed to create PayPal payment: ${e.message}"
-                    onApprovalUrl(null)
-                } finally {
-                    _isLoading.value = false
-                }
-            }
-        } ?: run {
-            _error.value = "User ID not initialized"
-            onApprovalUrl(null)
-        }
-    }
+//    fun processPayPalPayment(totalCost: Double, onApprovalUrl: (String?) -> Unit) {
+//        userId?.let { uid ->
+//            viewModelScope.launch {
+//                _isLoading.value = true
+//                _error.value = null
+//                try {
+//                    val approvalUrl = createPayPalPayment(uid, totalCost, orderId)
+//                    Log.d("CartViewModel", "PayPal approval URL: $approvalUrl")
+//                    onApprovalUrl(approvalUrl)
+//                } catch (e: Exception) {
+//                    Log.e("CartViewModel", "Error creating PayPal payment: $e")
+//                    _error.value = "Failed to create PayPal payment: ${e.message}"
+//                    onApprovalUrl(null)
+//                } finally {
+//                    _isLoading.value = false
+//                }
+//            }
+//        } ?: run {
+//            _error.value = "User ID not initialized"
+//            onApprovalUrl(null)
+//        }
+//    }
 
-    // Hàm xác nhận thanh toán và cập nhật trạng thái đơn hàng
     fun confirmPayPalPayment(orderId: String, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -161,19 +188,19 @@ class CartViewModel @Inject constructor(
             try {
                 val captureResponse = capturePayPalPayment(orderId)
                 if (captureResponse?.status == "COMPLETED") {
-                    // Cập nhật trạng thái đơn hàng trong Firestore
+                    Log.d("CartViewModel", "PayPal payment captured successfully: ${captureResponse.id}")
                     userId?.let { uid ->
-                        val orderRef = Firebase.firestore.collection("users")
-                            .document(uid)
-                            .collection("orders")
+                        val orderRef = Firebase.firestore.collection("orders")
                             .document(orderId)
                         orderRef.update(
                             mapOf(
-                                "status" to "Completed",
+                                "status" to "Delivered",
                                 "paymentId" to captureResponse.id,
                                 "paymentTime" to com.google.firebase.Timestamp.now()
                             )
                         ).addOnSuccessListener {
+                            Log.d("CartViewModel", "Order status updated successfully for orderId: $orderId")
+                            clearCart()
                             onResult(true, orderId)
                         }.addOnFailureListener { e ->
                             Log.e("CartViewModel", "Error updating order status: $e")
@@ -196,5 +223,10 @@ class CartViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    override fun onCleared() {
+        firestoreListener?.remove()
+        super.onCleared()
     }
 }

@@ -10,13 +10,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 import android.util.Log
+import javax.inject.Inject
 
 @HiltViewModel
-class ProductViewModel @Inject constructor(
-    private val repository: FirestoreRepository
-) : ViewModel() {
+class ProductViewModel @Inject constructor() : ViewModel() {
+    private val repository = FirestoreRepository()
+
     // Chuyển các biến trạng thái sang StateFlow
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products.asStateFlow()

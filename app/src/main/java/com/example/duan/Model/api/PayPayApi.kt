@@ -6,13 +6,13 @@ import java.math.BigDecimal
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 // PAYPAL REQUEST MODELS
 data class PayPalRequest(
@@ -95,7 +95,7 @@ data class PayPalTokenResponse(
     val expires_in: Int
 )
 
-
+// Tạo PayPal order và trả về approval URL, bỏ tham số orderId
 suspend fun createPayPalPayment(userId: String, totalCost: Double): String? = withContext(Dispatchers.IO) {
     val TAG = "PayPalApi"
     val clientId = "ARZnixzs4_erjJi5ZzFjErtNE3C3c-BDMau2PI2sBYtSqhETFd07DerQr6qiTvWkqY-DHHm3jhD7Ecdz"
@@ -103,10 +103,11 @@ suspend fun createPayPalPayment(userId: String, totalCost: Double): String? = wi
     val merchantPaymentId = "PAYMENT_${System.currentTimeMillis()}_${Random.nextInt(1000, 9999)}"
     val amount = BigDecimal(totalCost).setScale(2, BigDecimal.ROUND_HALF_UP).toString()
     val orderDescription = "Thanh toán đơn hàng cho user $userId"
-    val returnUrl = "com.example.duan://paypal/return"
+    val orderId = "order_${UUID.randomUUID()}" // Tạo orderId bên trong hàm
+    val returnUrl = "com.example.duan://paypal/return?userId=$userId&totalCost=$totalCost&orderId=$orderId"
     val cancelUrl = "com.example.duan://paypal/cancel"
 
-    Log.d(TAG, "Starting PayPal payment creation - userId: $userId, totalCost: $totalCost, amountUSD: $amount")
+    Log.d(TAG, "Starting PayPal payment creation - userId: $userId, totalCost: $totalCost, amountUSD: $amount, orderId: $orderId")
 
     val requestBody = PayPalRequest(
         intent = "CAPTURE",
@@ -176,9 +177,7 @@ suspend fun createPayPalPayment(userId: String, totalCost: Double): String? = wi
     }
 }
 
-/**
- * Lấy access token từ PayPal API
- */
+// Lấy access token từ PayPal API
 suspend fun getPayPalAccessToken(clientId: String, clientSecret: String): String? = withContext(Dispatchers.IO) {
     val TAG = "PayPalApi"
     var tokenConnection: HttpURLConnection? = null
@@ -217,7 +216,7 @@ suspend fun getPayPalAccessToken(clientId: String, clientSecret: String): String
     }
 }
 
-
+// Capture thanh toán PayPal
 suspend fun capturePayPalPayment(orderId: String): PayPalCaptureResponse? = withContext(Dispatchers.IO) {
     val TAG = "PayPalApi"
     val clientId = "ARZnixzs4_erjJi5ZzFjErtNE3C3c-BDMau2PI2sBYtSqhETFd07DerQr6qiTvWkqY-DHHm3jhD7Ecdz"

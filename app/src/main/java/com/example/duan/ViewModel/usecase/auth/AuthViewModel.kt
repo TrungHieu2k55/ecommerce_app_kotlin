@@ -26,9 +26,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authRepository: AuthRepository,
-    private val firestoreRepository: FirestoreRepository
+    private val authRepository: AuthRepository
 ) : ViewModel() {
+
+    private val firestoreRepository = FirestoreRepository()
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
     val loginState: StateFlow<LoginState> = _loginState

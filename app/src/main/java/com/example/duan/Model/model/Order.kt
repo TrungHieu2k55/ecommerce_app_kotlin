@@ -6,13 +6,13 @@ data class Order(
     val orderId: String = "",
     val userId: String = "",
     val items: List<OrderItem> = emptyList(),
-    val totalPrice: Number = 0L,
+    var totalPrice: Double = 0.0,
     val status: String = "Pending",
     val tracking: TrackingInfo? = null,
     val createdAt: Timestamp? = null,
     val shippingAddress: String = "",
     val couponCode: String? = null,
-    val discount: Number = 0L
+    val discount: Double = 0.0
 )
 
 data class OrderItem(
@@ -20,7 +20,7 @@ data class OrderItem(
     val name: String = "",
     val imageUrl: String = "",
     val quantity: Int = 0,
-    val price: Number = 0.0
+    val price: Double = 0.0
 )
 
 data class TrackingInfo(

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.duan.Model.api.createPayPalPayment
+import com.example.duan.Model.api.capturePayPalPayment
 import com.example.duan.ViewModel.usecase.auth.AuthViewModel
 import android.content.Intent
 import android.net.Uri
@@ -31,7 +32,15 @@ import android.util.Log
 import android.widget.Toast
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.clickable
+import com.example.duan.Model.model.Order
+import com.example.duan.Model.model.OrderItem
+import com.example.duan.Model.repository.FirestoreRepository
+import com.example.duan.ViewModel.cart.CartViewModel
+import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,21 +49,87 @@ fun PaymentMethodsScreen(
     authViewModel: AuthViewModel,
     userId: String,
     totalCost: Double,
-    moMoResultLauncher: ActivityResultLauncher<Intent>
+    moMoResultLauncher: ActivityResultLauncher<Intent>,
+    orderId: String? = null
 ) {
     val paymentMethods = authViewModel.userProfile.value?.paymentMethods ?: emptyList()
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var selectedPaymentMethod by remember { mutableStateOf<String?>(null) }
-    var approvalUrl by remember { mutableStateOf<String?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var hasNavigated by remember { mutableStateOf(false) }
+    var paymentJob by remember { mutableStateOf<Job?>(null) }
+    var isPayPalPaymentInitiated by remember { mutableStateOf(false) }
+
+    val cartViewModel: CartViewModel = hiltViewModel()
+    val cartItems by cartViewModel.cartItems.collectAsState()
+    val orderViewModel: OrderViewModel = hiltViewModel()
+
+    LaunchedEffect(userId) {
+        if (cartItems.isEmpty()) {
+            Log.d("PaymentMethodsScreen", "Khởi tạo CartViewModel cho userId: $userId")
+            cartViewModel.init(userId)
+        }
+    }
+
+    LaunchedEffect(orderId) {
+        if (orderId != null && isPayPalPaymentInitiated) {
+            coroutineScope.launch {
+                try {
+                    isProcessing = true
+                    Log.d("PaymentMethodsScreen", "Xử lý deep link PayPal với orderId: $orderId")
+                    val captureResponse = capturePayPalPayment(orderId)
+                    if (captureResponse?.status == "COMPLETED") {
+                        Log.d("PaymentMethodsScreen", "Thanh toán PayPal thành công, lưu đơn hàng")
+                        val order = Order(
+                            orderId = orderId,
+                            userId = userId,
+                            items = cartItems.map { cartItem ->
+                                OrderItem(
+                                    productId = cartItem.productId,
+                                    name = cartItem.productName,
+                                    imageUrl = cartItem.image,
+                                    quantity = cartItem.quantity,
+                                    price = cartItem.price
+                                )
+                            },
+                            totalPrice = totalCost,
+                            status = "Paid",
+                            createdAt = com.google.firebase.Timestamp.now(),
+                            shippingAddress = "Địa chỉ giao hàng của người dùng",
+                            couponCode = null,
+                            discount = 0.0
+                        )
+                        FirestoreRepository().saveOrder(order)
+                        cartViewModel.clearCart()
+                        orderViewModel.refreshOrdersAfterPayment()
+                        if (!hasNavigated) {
+                            Log.d("PaymentMethodsScreen", "Điều hướng đến payment_success với orderId: $orderId")
+                            navController.navigate("payment_success/$userId/$orderId/$totalCost")
+                            hasNavigated = true
+                        }
+                    } else {
+                        Log.e("PaymentMethodsScreen", "Thanh toán PayPal không hoàn tất: ${captureResponse?.status}")
+                        Toast.makeText(context, "Thanh toán PayPal không hoàn tất", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e("PaymentMethodsScreen", "Lỗi khi capture PayPal: ${e.message}", e)
+                    Toast.makeText(context, "Lỗi khi xử lý thanh toán PayPal: ${e.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessing = false
+                    isPayPalPaymentInitiated = false
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Payment Methods") },
+                title = { Text("Phương thức thanh toán") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -74,7 +149,7 @@ fun PaymentMethodsScreen(
         ) {
             if (paymentMethods.isNotEmpty()) {
                 Text(
-                    text = "Linked Payment Methods",
+                    text = "Phương thức thanh toán đã liên kết",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 8.dp)
@@ -89,6 +164,7 @@ fun PaymentMethodsScreen(
                                 .padding(vertical = 8.dp)
                                 .clickable {
                                     selectedPaymentMethod = method
+                                    isPayPalPaymentInitiated = false
                                 }
                                 .background(
                                     if (selectedPaymentMethod == method) Color(0xFFE3F2FD) else Color.White,
@@ -103,7 +179,7 @@ fun PaymentMethodsScreen(
                                 val updatedMethods = paymentMethods.toMutableList().apply { remove(method) }
                                 authViewModel.updatePaymentMethods(updatedMethods)
                             }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                Icon(Icons.Default.Delete, contentDescription = "Xóa")
                             }
                         }
                         Divider()
@@ -116,11 +192,13 @@ fun PaymentMethodsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Payment Options",
+                text = "Tùy chọn thanh toán",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
+
+            // BankCard
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -129,43 +207,18 @@ fun PaymentMethodsScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .clickable {
-                            selectedPaymentMethod = "BankCard"
-                        }
-                        .background(
-                            if (selectedPaymentMethod == "BankCard") Color(0xFFE3F2FD) else Color.White
-                        ),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CreditCard,
-                            contentDescription = "Credit Card",
-                            tint = Color(0xFF666666),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Credit/Debit Card",
-                            fontSize = 16.sp,
-                            color = Color(0xFF666666)
-                        )
+                PaymentOptionItem(
+                    icon = Icons.Default.CreditCard,
+                    name = "Thẻ tín dụng/Thẻ ghi nợ",
+                    isSelected = selectedPaymentMethod == "BankCard",
+                    onClick = {
+                        selectedPaymentMethod = "BankCard"
+                        isPayPalPaymentInitiated = false
                     }
-                    if (selectedPaymentMethod == "BankCard") {
-                        Text(
-                            text = "Selected",
-                            color = Color(0xFF1E88E5),
-                            fontSize = 14.sp
-                        )
-                    }
-                }
+                )
             }
 
+            // COD
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -174,43 +227,18 @@ fun PaymentMethodsScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .clickable {
-                            selectedPaymentMethod = "COD"
-                        }
-                        .background(
-                            if (selectedPaymentMethod == "COD") Color(0xFFE3F2FD) else Color.White
-                        ),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Money,
-                            contentDescription = "Cash on Delivery",
-                            tint = Color(0xFF666666),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Cash on Delivery (COD)",
-                            fontSize = 16.sp,
-                            color = Color(0xFF666666)
-                        )
+                PaymentOptionItem(
+                    icon = Icons.Default.Money,
+                    name = "Thanh toán khi nhận hàng (COD)",
+                    isSelected = selectedPaymentMethod == "COD",
+                    onClick = {
+                        selectedPaymentMethod = "COD"
+                        isPayPalPaymentInitiated = false
                     }
-                    if (selectedPaymentMethod == "COD") {
-                        Text(
-                            text = "Selected",
-                            color = Color(0xFF1E88E5),
-                            fontSize = 14.sp
-                        )
-                    }
-                }
+                )
             }
 
+            // PayPal
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -219,90 +247,123 @@ fun PaymentMethodsScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column {
-                    PaymentOptionItem(
-                        icon = Icons.Default.Phone,
-                        name = "PayPal",
-                        onLinkClick = {
-                            if (totalCost <= 0) {
-                                Log.d("PaymentMethodsScreen", "Total cost is <= 0, showing Toast")
-                                Toast.makeText(context, "Số tiền phải lớn hơn 0", Toast.LENGTH_LONG).show()
-                            } else {
-                                coroutineScope.launch {
-                                    try {
-                                        val approvalUrlFromApi = createPayPalPayment(userId, totalCost)
-                                        if (approvalUrlFromApi.isNullOrEmpty()) {
-                                            Log.e("PaymentMethodsScreen", "Approval URL is null or empty")
-                                            Toast.makeText(context, "Không thể tạo URL thanh toán PayPal", Toast.LENGTH_LONG).show()
-                                            return@launch
-                                        }
-                                        Log.d("PayPal", "Approval URL: $approvalUrlFromApi")
-                                        approvalUrl = approvalUrlFromApi
-                                        selectedPaymentMethod = "PayPal"
-                                        val customTabsIntent = CustomTabsIntent.Builder().build()
-                                        customTabsIntent.launchUrl(context, Uri.parse(approvalUrlFromApi))
-                                        approvalUrl = null // Reset sau khi mở
-                                    } catch (e: Exception) {
-                                        Log.e("PaymentMethodsScreen", "PayPal payment failed: ${e.toString()}", e)
-                                        val errorMessage = e.message ?: "Lỗi không xác định"
-                                        Toast.makeText(context, "Thanh toán PayPal thất bại: $errorMessage", Toast.LENGTH_LONG).show()
+                PaymentOptionItem(
+                    icon = Icons.Default.Phone,
+                    name = "PayPal",
+                    isSelected = selectedPaymentMethod == "PayPal",
+                    onLinkClick = {
+                        if (totalCost <= 0) {
+                            Log.d("PaymentMethodsScreen", "Tổng số tiền <= 0, hiển thị Toast")
+                            Toast.makeText(context, "Số tiền phải lớn hơn 0", Toast.LENGTH_LONG).show()
+                        } else if (cartItems.isEmpty()) {
+                            Log.d("PaymentMethodsScreen", "Giỏ hàng trống, không thể tạo đơn hàng")
+                            Toast.makeText(context, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
+                        } else {
+                            coroutineScope.launch {
+                                try {
+                                    isPayPalPaymentInitiated = true
+                                    selectedPaymentMethod = "PayPal"
+                                    val approvalUrlFromApi = createPayPalPayment(userId, totalCost)
+                                    if (approvalUrlFromApi.isNullOrEmpty()) {
+                                        Log.e("PaymentMethodsScreen", "URL phê duyệt rỗng hoặc null")
+                                        Toast.makeText(context, "Không thể tạo URL thanh toán PayPal", Toast.LENGTH_LONG).show()
+                                        isPayPalPaymentInitiated = false
+                                        return@launch
                                     }
+                                    Log.d("PayPal", "URL phê duyệt: $approvalUrlFromApi")
+                                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                                    customTabsIntent.launchUrl(context, Uri.parse(approvalUrlFromApi))
+                                } catch (e: Exception) {
+                                    Log.e("PaymentMethodsScreen", "Thanh toán PayPal thất bại: ${e.toString()}", e)
+                                    val errorMessage = e.message ?: "Lỗi không xác định"
+                                    Toast.makeText(context, "Thanh toán PayPal thất bại: $errorMessage", Toast.LENGTH_LONG).show()
+                                    isPayPalPaymentInitiated = false
                                 }
                             }
                         }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            approvalUrl?.let { url ->
-                Log.d("PaymentMethodsScreen", "Displaying approval URL: $url")
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = url,
-                        fontSize = 14.sp,
-                        color = Color.Blue,
-                        modifier = Modifier.clickable {
-                            val customTabsIntent = CustomTabsIntent.Builder().build()
-                            customTabsIntent.launchUrl(context, Uri.parse(url))
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Click to open in browser",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
-                    if (selectedPaymentMethod != null) {
-                        Toast.makeText(context, "Payment confirmed with $selectedPaymentMethod. Total: ${"%.2f".format(totalCost)} USD", Toast.LENGTH_LONG).show()
-                        navController.popBackStack("checkout/$userId", inclusive = false)
-                    } else {
-                        Toast.makeText(context, "Please select a payment method", Toast.LENGTH_SHORT).show()
+                    if (selectedPaymentMethod == "PayPal" && isPayPalPaymentInitiated) {
+                        Log.d("PaymentMethodsScreen", "PayPal payment in progress, skipping order creation from button")
+                        Toast.makeText(context, "Đang xử lý thanh toán PayPal, vui lòng hoàn tất quá trình thanh toán", Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+
+                    if (selectedPaymentMethod != null && !isProcessing) {
+                        isProcessing = true
+                        paymentJob?.cancel()
+                        paymentJob = coroutineScope.launch {
+                            try {
+                                if (cartItems.isEmpty()) {
+                                    Toast.makeText(context, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
+                                    isProcessing = false
+                                    return@launch
+                                }
+
+                                if (selectedPaymentMethod != "PayPal") {
+                                    val paymentId = if (selectedPaymentMethod == "COD") "cod_${UUID.randomUUID()}" else "card_${UUID.randomUUID()}"
+                                    val order = Order(
+                                        orderId = paymentId,
+                                        userId = userId,
+                                        items = cartItems.map { cartItem ->
+                                            OrderItem(
+                                                productId = cartItem.productId,
+                                                name = cartItem.productName,
+                                                imageUrl = cartItem.image,
+                                                quantity = cartItem.quantity,
+                                                price = cartItem.price
+                                            )
+                                        },
+                                        totalPrice = totalCost,
+                                        status = if (selectedPaymentMethod == "COD") "Processing" else "Paid",
+                                        createdAt = com.google.firebase.Timestamp.now(),
+                                        shippingAddress = "Địa chỉ giao hàng của người dùng",
+                                        couponCode = null,
+                                        discount = 0.0
+                                    )
+
+                                    Log.d("PaymentMethodsScreen", "Chuẩn bị lưu đơn hàng với orderId: $paymentId")
+                                    FirestoreRepository().saveOrder(order)
+                                    Log.d("PaymentMethodsScreen", "Đã lưu đơn hàng với orderId: $paymentId")
+                                    cartViewModel.clearCart()
+                                    orderViewModel.refreshOrdersAfterPayment()
+
+                                    if (!hasNavigated) {
+                                        Log.d("PaymentMethodsScreen", "Điều hướng đến payment_success với orderId: $paymentId")
+                                        navController.navigate("payment_success/$userId/$paymentId/$totalCost")
+                                        hasNavigated = true
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e("PaymentMethodsScreen", "Lỗi khi lưu đơn hàng: ${e.message}", e)
+                                Toast.makeText(context, "Lỗi khi tạo đơn hàng: ${e.message}", Toast.LENGTH_LONG).show()
+                            } finally {
+                                isProcessing = false
+                                paymentJob = null
+                            }
+                        }
+                    } else if (selectedPaymentMethod == null) {
+                        Toast.makeText(context, "Vui lòng chọn phương thức thanh toán", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .clip(RoundedCornerShape(25.dp)),
+                    .clip(RoundedCornerShape(12.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFBBDEFB),
-                    contentColor = Color(0xFF1E88E5)
+                    containerColor = if (isProcessing) Color.Gray else Color(0xFF1E88E5),
+                    contentColor = Color.White
                 ),
-                enabled = selectedPaymentMethod != null
+                enabled = !isProcessing
             ) {
                 Text(
-                    text = "Confirm Payment",
+                    text = if (isProcessing) "Đang xử lý..." else "Xác nhận thanh toán",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -315,15 +376,17 @@ fun PaymentMethodsScreen(
 fun PaymentOptionItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     name: String,
-    onLinkClick: () -> Unit
+    isSelected: Boolean = false,
+    onClick: () -> Unit = {},
+    onLinkClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .clickable { onLinkClick() }
+            .clickable { if (name == "PayPal") onLinkClick() else onClick() }
             .background(
-                if (name == "PayPal") Color.White else Color(0xFFE3F2FD)
+                if (isSelected) Color(0xFFE3F2FD) else Color.White
             ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -343,7 +406,7 @@ fun PaymentOptionItem(
             )
         }
         Text(
-            text = "Link",
+            text = if (name == "PayPal") "Liên kết" else if (isSelected) "Đã chọn" else "",
             color = Color(0xFF1E88E5),
             fontSize = 14.sp
         )

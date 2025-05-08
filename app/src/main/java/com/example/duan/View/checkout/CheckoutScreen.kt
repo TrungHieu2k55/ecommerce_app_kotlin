@@ -56,7 +56,7 @@ fun CheckoutScreen(
                 "1",
                 "Giao hàng tiết kiệm",
                 "07 Tháng 05 2025",
-                200.0
+                2.0
             )
         )
     }
@@ -282,7 +282,7 @@ fun CheckoutScreen(
                 Button(
                     onClick = {
                         // Điều hướng đến PaymentMethodsScreen với userId và totalCost
-                        navController.navigate("payment_methods/$userId?totalCost=$totalCost")
+                        navController.navigate("payment_methods/$userId/$totalCost")
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
                     shape = RoundedCornerShape(28.dp),

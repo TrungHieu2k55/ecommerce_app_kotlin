@@ -7,16 +7,14 @@ import com.example.duan.Model.model.Product
 import com.example.duan.Model.model.Review
 import com.example.duan.Model.model.UserProfile
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class FirestoreRepository @Inject constructor() {
-    internal val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+class FirestoreRepository {
+    val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
     // Lấy thông tin người dùng
     suspend fun getUserProfile(userId: String): Result<UserProfile?> {
@@ -35,7 +33,6 @@ class FirestoreRepository @Inject constructor() {
             }
 
             Result.success(userProfile)
-
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -83,10 +80,10 @@ class FirestoreRepository @Inject constructor() {
     // Lấy lịch sử đơn hàng
     suspend fun getOrderHistory(userId: String): Result<List<Order>> {
         return try {
-            val snapshot = firestore.collection("users")
-                .document(userId)
-                .collection("orders")
-                .orderBy("orderDate", Query.Direction.DESCENDING)
+            val snapshot = firestore.collection("orders")
+                .whereEqualTo("userId", userId)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .orderBy(FieldPath.documentId(), Query.Direction.DESCENDING)
                 .get()
                 .await()
             val orders = snapshot.documents.mapNotNull { doc ->
@@ -253,53 +250,6 @@ class FirestoreRepository @Inject constructor() {
         }
     }
 
-    // Lấy danh sách sản phẩm trong giỏ hàng
-    suspend fun getCartItems(userId: String): Result<List<CartItem>> {
-        return try {
-            val snapshot = firestore.collection("users")
-                .document(userId)
-                .collection("cart")
-                .get()
-                .await()
-            val cartItems = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(CartItem::class.java)?.copy(id = doc.id)
-            }
-            Result.success(cartItems)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    // Xóa sản phẩm khỏi giỏ hàng
-    suspend fun deleteCartItem(userId: String, cartItemId: String): Result<Unit> {
-        return try {
-            firestore.collection("users")
-                .document(userId)
-                .collection("cart")
-                .document(cartItemId)
-                .delete()
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    // Cập nhật số lượng sản phẩm trong giỏ
-    suspend fun updateCartItemQuantity(userId: String, cartItemId: String, newQuantity: Int): Result<Unit> {
-        return try {
-            firestore.collection("users")
-                .document(userId)
-                .collection("cart")
-                .document(cartItemId)
-                .update("quantity", newQuantity)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     // Cập nhật số lượng sản phẩm đã bán
     suspend fun incrementQuantitySold(productId: String, quantity: Int): Result<Unit> {
         return try {
@@ -326,7 +276,7 @@ class FirestoreRepository @Inject constructor() {
         }
     }
 
-    //xóa toàn bộ giỏ hàng sau khi đặt hàng thành công.
+    // Xóa toàn bộ giỏ hàng sau khi đặt hàng thành công
     suspend fun clearCart(userId: String): Result<Unit> {
         return try {
             val snapshot = firestore.collection("users")
@@ -342,6 +292,47 @@ class FirestoreRepository @Inject constructor() {
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun saveOrder(order: Order) {
+        try {
+            val tempLockRef = firestore.collection("temp_locks").document(order.orderId)
+            firestore.runTransaction { transaction ->
+                val orderRef = firestore.collection("orders").document(order.orderId)
+                val lockSnapshot = transaction.get(tempLockRef)
+                if (lockSnapshot.exists()) {
+                    Log.d("FirestoreRepository", "Order is being processed, skipping: ${order.orderId}")
+                    return@runTransaction
+                }
+                val snapshot = transaction.get(orderRef)
+                if (snapshot.exists()) {
+                    Log.d("FirestoreRepository", "Order with orderId ${order.orderId} already exists, skipping.")
+                    return@runTransaction
+                }
+                Log.d("FirestoreRepository", "Saving order with document ID: ${order.orderId}, userId: ${order.userId}, data: $order")
+                transaction.set(tempLockRef, mapOf("createdAt" to Timestamp.now()))
+                transaction.set(orderRef, order)
+            }.await()
+            tempLockRef.delete().await()
+            Log.d("FirestoreRepository", "Order saved successfully with document ID: ${order.orderId}")
+        } catch (e: Exception) {
+            Log.e("FirestoreRepository", "Error saving order: ${e.message}", e)
+            throw e
+        }
+    }
+
+    // Thêm phương thức updateOrderStatus
+    suspend fun updateOrderStatus(orderId: String, status: String) {
+        if (orderId.isEmpty()) {
+            throw IllegalArgumentException("orderId cannot be empty")
+        }
+        try {
+            firestore.collection("orders").document(orderId)
+                .update("status", status)
+                .await()
+        } catch (e: Exception) {
+            throw Exception("Failed to update order status for orderId: $orderId - ${e.message}", e)
         }
     }
 }

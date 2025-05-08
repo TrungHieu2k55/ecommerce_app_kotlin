@@ -21,7 +21,6 @@ class CartRepository @Inject constructor() {
     private suspend fun ensureUserDocumentExists(userId: String) {
         val userDoc = db.collection("users").document(userId).get().await()
         if (!userDoc.exists()) {
-            // Tạo tài liệu người dùng với thông tin cơ bản nếu chưa tồn tại
             val userProfile = UserProfile(
                 uid = userId,
                 displayName = auth.currentUser?.displayName ?: "",
@@ -39,18 +38,17 @@ class CartRepository @Inject constructor() {
         }
     }
 
-    suspend fun addToCart(item: CartItem): Result<Unit> {
+    suspend fun addToCart(item: CartItem): Result<String> {
         return try {
             val userId = currentUserId ?: throw Exception("User not logged in")
-            // Đảm bảo tài liệu người dùng tồn tại trước khi thêm vào giỏ hàng
             ensureUserDocumentExists(userId)
-            db.collection("users")
+            val docRef = db.collection("users")
                 .document(userId)
                 .collection("cart")
                 .add(item)
                 .await()
-            Log.d("CartRepository", "Added item to cart for user: $userId")
-            Result.success(Unit)
+            Log.d("CartRepository", "Added item to cart with ID: ${docRef.id} for user: $userId")
+            Result.success(docRef.id)
         } catch (e: Exception) {
             Log.e("CartRepository", "Failed to add item to cart: ${e.message}", e)
             Result.failure(e)
@@ -65,8 +63,13 @@ class CartRepository @Inject constructor() {
                 .collection("cart")
                 .get()
                 .await()
-            val cartItems = snapshot.toObjects(CartItem::class.java).mapIndexed { index, item ->
-                item.copy(id = snapshot.documents[index].id)
+            val cartItems = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(CartItem::class.java)?.copy(id = doc.id)
+                } catch (e: Exception) {
+                    Log.e("CartRepository", "Error parsing cart item: ${e.message}")
+                    null
+                }
             }
             Log.d("CartRepository", "Fetched ${cartItems.size} cart items for user: $userId")
             Result.success(cartItems)
@@ -106,6 +109,26 @@ class CartRepository @Inject constructor() {
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("CartRepository", "Failed to update item in cart: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearCart(userId: String): Result<Unit> {
+        return try {
+            val snapshot = db.collection("users")
+                .document(userId)
+                .collection("cart")
+                .get()
+                .await()
+            val batch = db.batch()
+            snapshot.documents.forEach { doc ->
+                batch.delete(doc.reference)
+            }
+            batch.commit().await()
+            Log.d("CartRepository", "Cleared cart for user: $userId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("CartRepository", "Failed to clear cart: ${e.message}", e)
             Result.failure(e)
         }
     }
