@@ -61,6 +61,13 @@ fun ProductDetailsScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Tăng lượt xem khi màn hình được tải lần đầu
+    LaunchedEffect(product.id) {
+        if (product.id.isNotEmpty()) {
+            productViewModel.incrementProductViews(product.id)
+        }
+    }
+
     // Khởi tạo CartViewModel với userId
     LaunchedEffect(userId) {
         cartViewModel.init(userId)
@@ -154,7 +161,7 @@ fun ProductDetailsScreen(
                             color = Color.Gray
                         )
                         Text(
-                            text = "${(product.price * quantity).toDouble() } $",
+                            text = "${(product.price * quantity).toDouble()} $",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF4FC3F7)

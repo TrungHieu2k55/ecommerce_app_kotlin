@@ -14,9 +14,9 @@ import android.util.Log
 import javax.inject.Inject
 
 @HiltViewModel
-class ProductViewModel @Inject constructor() : ViewModel() {
-    private val repository = FirestoreRepository()
-
+class ProductViewModel @Inject constructor(
+    private val repository: FirestoreRepository
+) : ViewModel() {
     // Chuyển các biến trạng thái sang StateFlow
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products.asStateFlow()
@@ -63,8 +63,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getAllProducts()
             if (result.isSuccess) {
                 _products.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load products"
+                Log.e("ProductViewModel", "Error fetching products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -77,8 +79,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getTopSellingProducts()
             if (result.isSuccess) {
                 _topSellingProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} top selling products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load top selling products"
+                Log.e("ProductViewModel", "Error fetching top selling products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -91,8 +95,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getNewInProducts()
             if (result.isSuccess) {
                 _newInProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} new in products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load new in products"
+                Log.e("ProductViewModel", "Error fetching new in products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -105,8 +111,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getHoodiesProducts()
             if (result.isSuccess) {
                 _hoodiesProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} hoodies products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load hoodies products"
+                Log.e("ProductViewModel", "Error fetching hoodies products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -119,8 +127,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getTrendingProducts()
             if (result.isSuccess) {
                 _trendingProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} trending products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load trending products"
+                Log.e("ProductViewModel", "Error fetching trending products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -131,8 +141,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getReviews(productId)
             if (result.isSuccess) {
                 _reviews.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} reviews for product $productId")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load reviews"
+                Log.e("ProductViewModel", "Error fetching reviews: ${_errorMessage.value}")
             }
         }
     }
@@ -144,9 +156,11 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getProductById(productId)
             if (result.isSuccess) {
                 _selectedProduct.value = result.getOrNull()
+                Log.d("ProductViewModel", "Fetched product with id: $productId")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load product"
                 _selectedProduct.value = null
+                Log.e("ProductViewModel", "Error fetching product: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -159,8 +173,10 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getProductsByCategory("technology")
             if (result.isSuccess) {
                 _technologyProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} technology products")
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load technology products"
+                Log.e("ProductViewModel", "Error fetching technology products: ${_errorMessage.value}")
             }
             _isLoading.value = false
         }
@@ -174,12 +190,28 @@ class ProductViewModel @Inject constructor() : ViewModel() {
             val result = repository.getProductsByCategory(category)
             if (result.isSuccess) {
                 _categoryProducts.value = result.getOrNull() ?: emptyList()
-                Log.d("ProductViewModel", "Products fetched: ${_categoryProducts.value.size}")
+                Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} products for category $category")
+                result.getOrNull()?.forEach { product ->
+                    Log.d("ProductViewModel", "Product ${product.id}: quantityInStock = ${product.quantityInStock}")
+                }
             } else {
                 _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to load products for category $category"
-                Log.e("ProductViewModel", "Error: ${_errorMessage.value}")
+                Log.e("ProductViewModel", "Error fetching products for category $category: ${_errorMessage.value}")
             }
             _isLoading.value = false
+        }
+    }
+
+    // Thêm phương thức để tăng lượt xem
+    fun incrementProductViews(productId: String) {
+        viewModelScope.launch {
+            val result = repository.incrementViews(productId)
+            if (result.isFailure) {
+                _errorMessage.value = result.exceptionOrNull()?.message ?: "Failed to increment views"
+                Log.e("ProductViewModel", "Error incrementing views: ${_errorMessage.value}")
+            } else {
+                Log.d("ProductViewModel", "Incremented views for product: $productId")
+            }
         }
     }
 }

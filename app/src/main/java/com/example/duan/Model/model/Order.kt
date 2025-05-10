@@ -10,9 +10,14 @@ data class Order(
     val status: String = "Pending",
     val tracking: TrackingInfo? = null,
     val createdAt: Timestamp? = null,
+    val inProgressAt: Timestamp? = null,     // Thời gian bắt đầu xử lý
+    val shippedAt: Timestamp? = null,        // Thời gian giao hàng
+    val deliveredAt: Timestamp? = null,      // Thời gian giao hàng thành công
+    val canceledAt: Timestamp? = null,       // Thời gian hủy đơn hàng (nếu có)
     val shippingAddress: String = "",
     val couponCode: String? = null,
-    val discount: Double = 0.0
+    val discount: Double = 0.0,
+    var hasReviewed: Boolean = false         // Theo dõi xem đơn hàng đã được đánh giá chưa
 )
 
 data class OrderItem(

@@ -7,6 +7,7 @@ import com.example.duan.Model.api.capturePayPalPayment
 import com.example.duan.Model.api.createPayPalPayment
 import com.example.duan.Model.model.CartItem
 import com.example.duan.Model.repository.CartRepository
+import com.example.duan.Model.repository.FirestoreRepository
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,7 +19,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CartViewModel @Inject constructor(
-    private val cartRepository: CartRepository
+    private val cartRepository: CartRepository,
+    private val firestoreRepository: FirestoreRepository
 ) : ViewModel() {
 
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
@@ -68,6 +70,7 @@ class CartViewModel @Inject constructor(
                         }
                         _cartItems.value = items
                         _isLoading.value = false
+                        Log.d("CartViewModel", "Cart updated for userId: $uid, items: $items")
                     }
                 }
         } ?: run {
@@ -158,28 +161,76 @@ class CartViewModel @Inject constructor(
         }
     }
 
-//    fun processPayPalPayment(totalCost: Double, onApprovalUrl: (String?) -> Unit) {
-//        userId?.let { uid ->
-//            viewModelScope.launch {
-//                _isLoading.value = true
-//                _error.value = null
-//                try {
-//                    val approvalUrl = createPayPalPayment(uid, totalCost, orderId)
-//                    Log.d("CartViewModel", "PayPal approval URL: $approvalUrl")
-//                    onApprovalUrl(approvalUrl)
-//                } catch (e: Exception) {
-//                    Log.e("CartViewModel", "Error creating PayPal payment: $e")
-//                    _error.value = "Failed to create PayPal payment: ${e.message}"
-//                    onApprovalUrl(null)
-//                } finally {
-//                    _isLoading.value = false
-//                }
-//            }
-//        } ?: run {
-//            _error.value = "User ID not initialized"
-//            onApprovalUrl(null)
-//        }
-//    }
+    fun updateCart() {
+        setupFirestoreListener() // Làm mới dữ liệu giỏ hàng từ Firestore
+    }
+
+    suspend fun validateCartItems(): Boolean {
+        try {
+            _isLoading.value = true
+            _error.value = null
+            val items = _cartItems.value
+            for (item in items) {
+                val productResult = firestoreRepository.getProductById(item.productId)
+                if (productResult.isFailure) {
+                    _error.value = "Không thể tải thông tin sản phẩm ${item.productName}"
+                    Log.e("CartViewModel", "Failed to load product ${item.productId}")
+                    return false
+                }
+                val product = productResult.getOrNull()
+                if (product == null || product.quantityInStock .toInt()< item.quantity) {
+                    _error.value = "Sản phẩm ${item.productName} đã hết hàng hoặc không đủ số lượng (có: ${product?.quantityInStock}, cần: ${item.quantity})"
+                    Log.e("CartViewModel", "Invalid product ${item.productName}: available=${product?.quantityInStock}, requested=${item.quantity}")
+                    return false
+                }
+            }
+            _error.value = null
+            return true
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Lỗi khi kiểm tra giỏ hàng"
+            Log.e("CartViewModel", "Error validating cart: ${e.message}", e)
+            return false
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    fun removeInvalidItems() {
+        userId?.let { uid ->
+            viewModelScope.launch {
+                try {
+                    _isLoading.value = true
+                    _error.value = null
+                    val validItems = _cartItems.value.filter { item ->
+                        val productResult = firestoreRepository.getProductById(item.productId)
+                        val product = productResult.getOrNull()
+                        product != null && product.quantityInStock.toInt() >= item.quantity
+                    }
+                    if (validItems.size < _cartItems.value.size) {
+                        _error.value = "Đã xóa các sản phẩm hết hàng khỏi giỏ hàng"
+                        Log.d("CartViewModel", "Removed invalid items, new cart: $validItems")
+                    }
+                    _cartItems.value = validItems
+                    // Cập nhật giỏ hàng trong Firestore
+                    val result = cartRepository.clearCart(uid)
+                    if (result.isSuccess) {
+                        validItems.forEach { item ->
+                            cartRepository.addToCart(item)
+                        }
+                        Log.d("CartViewModel", "Updated cart in Firestore for userId: $uid")
+                    } else {
+                        _error.value = "Lỗi khi cập nhật giỏ hàng: ${result.exceptionOrNull()?.message}"
+                        Log.e("CartViewModel", "Error updating cart: ${result.exceptionOrNull()?.message}")
+                    }
+                } catch (e: Exception) {
+                    _error.value = "Lỗi khi cập nhật giỏ hàng: ${e.message}"
+                    Log.e("CartViewModel", "Error updating cart: ${e.message}", e)
+                } finally {
+                    _isLoading.value = false
+                }
+            }
+        }
+    }
 
     fun confirmPayPalPayment(orderId: String, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {

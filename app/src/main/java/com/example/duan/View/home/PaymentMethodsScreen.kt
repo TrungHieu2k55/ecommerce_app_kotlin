@@ -60,15 +60,39 @@ fun PaymentMethodsScreen(
     var hasNavigated by remember { mutableStateOf(false) }
     var paymentJob by remember { mutableStateOf<Job?>(null) }
     var isPayPalPaymentInitiated by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val cartViewModel: CartViewModel = hiltViewModel()
     val cartItems by cartViewModel.cartItems.collectAsState()
+    val cartError by cartViewModel.error.collectAsState()
     val orderViewModel: OrderViewModel = hiltViewModel()
+
+    val userProfile by authViewModel.userProfile.collectAsState()
+    val selectedAddress = remember(userProfile) {
+        userProfile?.addresses?.find { it.title == userProfile?.selectedAddress }?.details
+            ?: "Chưa có địa chỉ được chọn"
+    }
+    val phoneNumber = userProfile?.phoneNumber ?: "Không có thông tin"
 
     LaunchedEffect(userId) {
         if (cartItems.isEmpty()) {
             Log.d("PaymentMethodsScreen", "Khởi tạo CartViewModel cho userId: $userId")
             cartViewModel.init(userId)
+        }
+    }
+
+    LaunchedEffect(cartError) {
+        cartError?.let { error ->
+            cartViewModel.removeInvalidItems()
+            snackbarHostState.showSnackbar(
+                message = error,
+                actionLabel = "Chỉnh sửa giỏ hàng",
+                duration = SnackbarDuration.Long
+            ).let { result ->
+                if (result == SnackbarResult.ActionPerformed) {
+                    navController.navigate("cart")
+                }
+            }
         }
     }
 
@@ -80,33 +104,39 @@ fun PaymentMethodsScreen(
                     Log.d("PaymentMethodsScreen", "Xử lý deep link PayPal với orderId: $orderId")
                     val captureResponse = capturePayPalPayment(orderId)
                     if (captureResponse?.status == "COMPLETED") {
-                        Log.d("PaymentMethodsScreen", "Thanh toán PayPal thành công, lưu đơn hàng")
-                        val order = Order(
-                            orderId = orderId,
-                            userId = userId,
-                            items = cartItems.map { cartItem ->
-                                OrderItem(
-                                    productId = cartItem.productId,
-                                    name = cartItem.productName,
-                                    imageUrl = cartItem.image,
-                                    quantity = cartItem.quantity,
-                                    price = cartItem.price
-                                )
-                            },
-                            totalPrice = totalCost,
-                            status = "Paid",
-                            createdAt = com.google.firebase.Timestamp.now(),
-                            shippingAddress = "Địa chỉ giao hàng của người dùng",
-                            couponCode = null,
-                            discount = 0.0
-                        )
-                        FirestoreRepository().saveOrder(order)
-                        cartViewModel.clearCart()
-                        orderViewModel.refreshOrdersAfterPayment()
-                        if (!hasNavigated) {
-                            Log.d("PaymentMethodsScreen", "Điều hướng đến payment_success với orderId: $orderId")
-                            navController.navigate("payment_success/$userId/$orderId/$totalCost")
-                            hasNavigated = true
+                        Log.d("PaymentMethodsScreen", "Thanh toán PayPal thành công, kiểm tra giỏ hàng")
+                        if (cartViewModel.validateCartItems()) {
+                            val order = Order(
+                                orderId = orderId,
+                                userId = userId,
+                                items = cartItems.map { cartItem ->
+                                    OrderItem(
+                                        productId = cartItem.productId,
+                                        name = cartItem.productName,
+                                        imageUrl = cartItem.image,
+                                        quantity = cartItem.quantity,
+                                        price = cartItem.price
+                                    )
+                                },
+                                totalPrice = totalCost,
+                                status = "Paid",
+                                createdAt = com.google.firebase.Timestamp.now(),
+                                shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
+                                couponCode = null,
+                                discount = 0.0
+                            )
+                            Log.d("PaymentMethodsScreen", "Cart items before saving order: $cartItems")
+                            FirestoreRepository().saveOrder(order)
+                            cartViewModel.clearCart()
+                            orderViewModel.refreshOrdersAfterPayment()
+                            if (!hasNavigated) {
+                                Log.d("PaymentMethodsScreen", "Điều hướng đến payment_success với orderId: $orderId")
+                                navController.navigate("payment_success/$userId/$orderId/$totalCost")
+                                hasNavigated = true
+                            }
+                        } else {
+                            Log.e("PaymentMethodsScreen", "Giỏ hàng không hợp lệ: ${cartError}")
+                            Toast.makeText(context, cartError ?: "Giỏ hàng không hợp lệ", Toast.LENGTH_LONG).show()
                         }
                     } else {
                         Log.e("PaymentMethodsScreen", "Thanh toán PayPal không hoàn tất: ${captureResponse?.status}")
@@ -139,7 +169,8 @@ fun PaymentMethodsScreen(
                 )
             )
         },
-        containerColor = Color(0xFFF5F5F5)
+        containerColor = Color(0xFFF5F5F5),
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -198,7 +229,6 @@ fun PaymentMethodsScreen(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            // BankCard
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -218,7 +248,6 @@ fun PaymentMethodsScreen(
                 )
             }
 
-            // COD
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -238,7 +267,6 @@ fun PaymentMethodsScreen(
                 )
             }
 
-            // PayPal
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -253,31 +281,32 @@ fun PaymentMethodsScreen(
                     isSelected = selectedPaymentMethod == "PayPal",
                     onLinkClick = {
                         if (totalCost <= 0) {
-                            Log.d("PaymentMethodsScreen", "Tổng số tiền <= 0, hiển thị Toast")
                             Toast.makeText(context, "Số tiền phải lớn hơn 0", Toast.LENGTH_LONG).show()
                         } else if (cartItems.isEmpty()) {
-                            Log.d("PaymentMethodsScreen", "Giỏ hàng trống, không thể tạo đơn hàng")
                             Toast.makeText(context, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
                         } else {
                             coroutineScope.launch {
-                                try {
-                                    isPayPalPaymentInitiated = true
-                                    selectedPaymentMethod = "PayPal"
-                                    val approvalUrlFromApi = createPayPalPayment(userId, totalCost)
-                                    if (approvalUrlFromApi.isNullOrEmpty()) {
-                                        Log.e("PaymentMethodsScreen", "URL phê duyệt rỗng hoặc null")
-                                        Toast.makeText(context, "Không thể tạo URL thanh toán PayPal", Toast.LENGTH_LONG).show()
+                                if (cartViewModel.validateCartItems()) {
+                                    try {
+                                        isPayPalPaymentInitiated = true
+                                        selectedPaymentMethod = "PayPal"
+                                        val approvalUrlFromApi = createPayPalPayment(userId, totalCost)
+                                        if (approvalUrlFromApi.isNullOrEmpty()) {
+                                            Log.e("PaymentMethodsScreen", "URL phê duyệt rỗng hoặc null")
+                                            Toast.makeText(context, "Không thể tạo URL thanh toán PayPal", Toast.LENGTH_LONG).show()
+                                            isPayPalPaymentInitiated = false
+                                            return@launch
+                                        }
+                                        Log.d("PayPal", "URL phê duyệt: $approvalUrlFromApi")
+                                        val customTabsIntent = CustomTabsIntent.Builder().build()
+                                        customTabsIntent.launchUrl(context, Uri.parse(approvalUrlFromApi))
+                                    } catch (e: Exception) {
+                                        Log.e("PaymentMethodsScreen", "Thanh toán PayPal thất bại: ${e.toString()}", e)
+                                        Toast.makeText(context, "Thanh toán PayPal thất bại: ${e.message}", Toast.LENGTH_LONG).show()
                                         isPayPalPaymentInitiated = false
-                                        return@launch
                                     }
-                                    Log.d("PayPal", "URL phê duyệt: $approvalUrlFromApi")
-                                    val customTabsIntent = CustomTabsIntent.Builder().build()
-                                    customTabsIntent.launchUrl(context, Uri.parse(approvalUrlFromApi))
-                                } catch (e: Exception) {
-                                    Log.e("PaymentMethodsScreen", "Thanh toán PayPal thất bại: ${e.toString()}", e)
-                                    val errorMessage = e.message ?: "Lỗi không xác định"
-                                    Toast.makeText(context, "Thanh toán PayPal thất bại: $errorMessage", Toast.LENGTH_LONG).show()
-                                    isPayPalPaymentInitiated = false
+                                } else {
+                                    Toast.makeText(context, cartError ?: "Giỏ hàng không hợp lệ", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
@@ -290,7 +319,6 @@ fun PaymentMethodsScreen(
             Button(
                 onClick = {
                     if (selectedPaymentMethod == "PayPal" && isPayPalPaymentInitiated) {
-                        Log.d("PaymentMethodsScreen", "PayPal payment in progress, skipping order creation from button")
                         Toast.makeText(context, "Đang xử lý thanh toán PayPal, vui lòng hoàn tất quá trình thanh toán", Toast.LENGTH_LONG).show()
                         return@Button
                     }
@@ -299,13 +327,19 @@ fun PaymentMethodsScreen(
                         isProcessing = true
                         paymentJob?.cancel()
                         paymentJob = coroutineScope.launch {
-                            try {
-                                if (cartItems.isEmpty()) {
-                                    Toast.makeText(context, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
-                                    isProcessing = false
-                                    return@launch
-                                }
+                            if (cartItems.isEmpty()) {
+                                Toast.makeText(context, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
+                                isProcessing = false
+                                return@launch
+                            }
 
+                            if (!cartViewModel.validateCartItems()) {
+                                Toast.makeText(context, cartError ?: "Giỏ hàng không hợp lệ", Toast.LENGTH_LONG).show()
+                                isProcessing = false
+                                return@launch
+                            }
+
+                            try {
                                 if (selectedPaymentMethod != "PayPal") {
                                     val paymentId = if (selectedPaymentMethod == "COD") "cod_${UUID.randomUUID()}" else "card_${UUID.randomUUID()}"
                                     val order = Order(
@@ -323,12 +357,12 @@ fun PaymentMethodsScreen(
                                         totalPrice = totalCost,
                                         status = if (selectedPaymentMethod == "COD") "Processing" else "Paid",
                                         createdAt = com.google.firebase.Timestamp.now(),
-                                        shippingAddress = "Địa chỉ giao hàng của người dùng",
+                                        shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                                         couponCode = null,
                                         discount = 0.0
                                     )
 
-                                    Log.d("PaymentMethodsScreen", "Chuẩn bị lưu đơn hàng với orderId: $paymentId")
+                                    Log.d("PaymentMethodsScreen", "Chuẩn bị lưu đơn hàng với orderId: $paymentId, cartItems: $cartItems")
                                     FirestoreRepository().saveOrder(order)
                                     Log.d("PaymentMethodsScreen", "Đã lưu đơn hàng với orderId: $paymentId")
                                     cartViewModel.clearCart()
@@ -342,7 +376,15 @@ fun PaymentMethodsScreen(
                                 }
                             } catch (e: Exception) {
                                 Log.e("PaymentMethodsScreen", "Lỗi khi lưu đơn hàng: ${e.message}", e)
-                                Toast.makeText(context, "Lỗi khi tạo đơn hàng: ${e.message}", Toast.LENGTH_LONG).show()
+                                snackbarHostState.showSnackbar(
+                                    message = e.message ?: "Lỗi khi tạo đơn hàng",
+                                    actionLabel = "Chỉnh sửa giỏ hàng",
+                                    duration = SnackbarDuration.Long
+                                ).let { result ->
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        navController.navigate("cart")
+                                    }
+                                }
                             } finally {
                                 isProcessing = false
                                 paymentJob = null

@@ -11,9 +11,10 @@ import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
 
-class FirestoreRepository {
+class FirestoreRepository @Inject constructor() {
     val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
     // Lấy thông tin người dùng
@@ -114,10 +115,22 @@ class FirestoreRepository {
                 .get()
                 .await()
             val products = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Product::class.java)?.copy(id = doc.id)
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
             }
             Result.success(products)
         } catch (e: Exception) {
+            Log.e("FirestoreRepository", "Error fetching products", e)
             Result.failure(e)
         }
     }
@@ -131,7 +144,18 @@ class FirestoreRepository {
                 .get()
                 .await()
             val products = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Product::class.java)?.copy(id = doc.id)
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
             }
             Result.success(products)
         } catch (e: Exception) {
@@ -148,7 +172,18 @@ class FirestoreRepository {
                 .get()
                 .await()
             val products = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Product::class.java)?.copy(id = doc.id)
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
             }
             Result.success(products)
         } catch (e: Exception) {
@@ -160,12 +195,23 @@ class FirestoreRepository {
     suspend fun getTrendingProducts(limit: Long = 5): Result<List<Product>> {
         return try {
             val snapshot = firestore.collection("products")
-                .orderBy("addedToCartCount", Query.Direction.DESCENDING)
+                .orderBy("views", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get()
                 .await()
             val products = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Product::class.java)?.copy(id = doc.id)
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
             }
             Result.success(products)
         } catch (e: Exception) {
@@ -182,7 +228,18 @@ class FirestoreRepository {
                 .get()
                 .await()
             val products = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Product::class.java)?.copy(id = doc.id)
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
             }
             Result.success(products)
         } catch (e: Exception) {
@@ -221,35 +278,6 @@ class FirestoreRepository {
         }
     }
 
-    // Thêm sản phẩm vào giỏ hàng
-    suspend fun addToCart(userId: String, cartItem: CartItem): Result<Unit> {
-        return try {
-            firestore.collection("products")
-                .document(cartItem.productId)
-                .update("addedToCartCount", FieldValue.increment(1))
-                .await()
-
-            val cartItemMap = hashMapOf(
-                "productId" to cartItem.productId,
-                "productName" to cartItem.productName,
-                "price" to cartItem.price,
-                "quantity" to cartItem.quantity,
-                "size" to cartItem.size,
-                "color" to cartItem.color,
-                "image" to cartItem.image,
-                "addedAt" to Timestamp.now()
-            )
-            firestore.collection("users")
-                .document(userId)
-                .collection("cart")
-                .add(cartItemMap)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     // Cập nhật số lượng sản phẩm đã bán
     suspend fun incrementQuantitySold(productId: String, quantity: Int): Result<Unit> {
         return try {
@@ -269,9 +297,24 @@ class FirestoreRepository {
                 .whereEqualTo("categories", categories)
                 .get()
                 .await()
-            val products = snapshot.toObjects(Product::class.java)
+            val products = snapshot.documents.mapNotNull { doc ->
+                val data = doc.data
+                val quantityInStock = data?.get("quantityInStock")?.let {
+                    when (it) {
+                        is Number -> it.toInt()
+                        is String -> it.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                } ?: 0
+                Log.d("FirestoreRepository", "Product ${doc.id}: quantityInStock raw=${data?.get("quantityInStock")}, converted=$quantityInStock")
+                doc.toObject(Product::class.java)?.copy(
+                    id = doc.id,
+                    quantityInStock = quantityInStock
+                )
+            }
             Result.success(products)
         } catch (e: Exception) {
+            Log.e("FirestoreRepository", "Error fetching products by category", e)
             Result.failure(e)
         }
     }
@@ -310,11 +353,33 @@ class FirestoreRepository {
                     Log.d("FirestoreRepository", "Order with orderId ${order.orderId} already exists, skipping.")
                     return@runTransaction
                 }
-                Log.d("FirestoreRepository", "Saving order with document ID: ${order.orderId}, userId: ${order.userId}, data: $order")
+                // Kiểm tra tồn kho trước khi lưu đơn hàng
+                order.items.forEach { item ->
+                    val productRef = firestore.collection("products").document(item.productId)
+                    val productSnapshot = transaction.get(productRef)
+                    if (!productSnapshot.exists()) {
+                        Log.e("FirestoreRepository", "Product with ID ${item.productId} does not exist")
+                        throw Exception("Product with ID ${item.productId} does not exist")
+                    }
+                    val product = productSnapshot.toObject(Product::class.java)
+                    Log.d("FirestoreRepository", "Checking product ${item.name}: available=${product?.quantityInStock}, requested=${item.quantity}")
+                    if (product == null || product.quantityInStock < item.quantity) {
+                        throw Exception("Product ${item.name} is out of stock or insufficient quantity (available: ${product?.quantityInStock}, requested: ${item.quantity})")
+                    }
+                    // Giảm số lượng tồn kho
+                    transaction.update(productRef, "quantityInStock", FieldValue.increment(-item.quantity.toLong()))
+                    // Tăng số lượng đã bán
+                    transaction.update(productRef, "quantitySold", FieldValue.increment(item.quantity.toLong()))
+                }
+                // Thiết lập thời gian tạo
+                val orderWithTimestamp = order.copy(createdAt = Timestamp.now())
+                Log.d("FirestoreRepository", "Saving order with document ID: ${order.orderId}, userId: ${order.userId}, data: $orderWithTimestamp")
                 transaction.set(tempLockRef, mapOf("createdAt" to Timestamp.now()))
-                transaction.set(orderRef, order)
+                transaction.set(orderRef, orderWithTimestamp)
             }.await()
             tempLockRef.delete().await()
+            // Xóa giỏ hàng sau khi lưu thành công
+            clearCart(order.userId)
             Log.d("FirestoreRepository", "Order saved successfully with document ID: ${order.orderId}")
         } catch (e: Exception) {
             Log.e("FirestoreRepository", "Error saving order: ${e.message}", e)
@@ -322,17 +387,36 @@ class FirestoreRepository {
         }
     }
 
-    // Thêm phương thức updateOrderStatus
+    // Cập nhật trạng thái đơn hàng và thời gian tương ứng
     suspend fun updateOrderStatus(orderId: String, status: String) {
         if (orderId.isEmpty()) {
             throw IllegalArgumentException("orderId cannot be empty")
         }
         try {
+            val updates = hashMapOf(
+                "status" to status,
+                "${status.lowercase()}_at" to Timestamp.now()
+            )
             firestore.collection("orders").document(orderId)
-                .update("status", status)
+                .update(updates as Map<String, Any>)
                 .await()
+            Log.d("FirestoreRepository", "Updated order status for $orderId to $status")
         } catch (e: Exception) {
-            throw Exception("Failed to update order status for orderId: $orderId - ${e.message}", e)
+            Log.e("FirestoreRepository", "Failed to update order status for $orderId: ${e.message}")
+            throw e
+        }
+    }
+
+    // Tăng lượt xem sản phẩm
+    suspend fun incrementViews(productId: String): Result<Unit> {
+        return try {
+            firestore.collection("products")
+                .document(productId)
+                .update("views", FieldValue.increment(1))
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

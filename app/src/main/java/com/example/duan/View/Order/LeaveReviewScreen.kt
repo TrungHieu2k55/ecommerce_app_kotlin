@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +32,8 @@ fun LeaveReviewScreen(
     var rating by remember { mutableStateOf(0f) }
     var comment by remember { mutableStateOf("") }
     val error by orderViewModel.error.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -54,7 +57,8 @@ fun LeaveReviewScreen(
                 )
             )
         },
-        containerColor = Color.White
+        containerColor = Color.White,
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -70,7 +74,6 @@ fun LeaveReviewScreen(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            // Rating
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
@@ -89,7 +92,6 @@ fun LeaveReviewScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Comment
             Text(
                 text = "Nhận xét",
                 fontSize = 14.sp,
@@ -120,7 +122,6 @@ fun LeaveReviewScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Error message
             if (error != null) {
                 Text(
                     text = error ?: "Đã xảy ra lỗi",
@@ -130,14 +131,22 @@ fun LeaveReviewScreen(
                 )
             }
 
-            // Submit button
             Button(
                 onClick = {
                     if (rating > 0) {
                         orderViewModel.submitReview(orderId, rating, comment)
-                        navController.popBackStack() // Quay lại sau khi gửi đánh giá
+                        scope.launch {
+                            if (error == null) {
+                                snackbarHostState.showSnackbar("Đánh giá đã được gửi!")
+                                navController.popBackStack()
+                            } else {
+                                snackbarHostState.showSnackbar("Lỗi: $error")
+                            }
+                        }
                     } else {
-                        Log.d("LeaveReviewScreen", "Rating must be greater than 0")
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Vui lòng chọn số sao!")
+                        }
                     }
                 },
                 modifier = Modifier

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.duan.Model.model.Order
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,9 +15,14 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.tasks.await
+import com.example.duan.Model.model.CartItem
+import com.example.duan.Model.repository.FirestoreRepository
+import com.example.duan.ViewModel.cart.CartViewModel
 
 @HiltViewModel
-class OrderViewModel @Inject constructor() : ViewModel() {
+class OrderViewModel @Inject constructor(
+    private val firestoreRepository: FirestoreRepository
+) : ViewModel() {
 
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
@@ -29,49 +35,53 @@ class OrderViewModel @Inject constructor() : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _reOrderResult = MutableStateFlow<String?>(null)
+    val reOrderResult: StateFlow<String?> = _reOrderResult
+
+    private var ordersListener: ListenerRegistration? = null // Quản lý listener
+
     init {
-        Log.d("OrderViewModel", "ViewModel initialized, fetching orders")
         fetchOrders()
     }
 
     fun fetchOrders() {
         viewModelScope.launch {
             try {
-                Log.d("OrderViewModel", "Starting fetchOrders")
                 _isLoading.value = true
                 _error.value = null
 
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 val userId = currentUser?.uid
                 if (userId == null) {
-                    Log.e("OrderViewModel", "User not logged in")
                     _error.value = "Please log in to view your orders"
                     _isLoading.value = false
                     return@launch
                 }
-                Log.d("OrderViewModel", "Fetching orders for userId = $userId")
 
-                firestore.collection("orders")
+                // Xóa listener cũ nếu tồn tại
+                ordersListener?.remove()
+
+                val query = firestore.collection("orders")
                     .whereEqualTo("userId", userId)
                     .orderBy("createdAt", Query.Direction.DESCENDING)
-                    .addSnapshotListener { snapshot, error ->
-                        if (error != null) {
-                            Log.e("OrderViewModel", "Failed to fetch orders: ${error.message}")
-                            _error.value = "Failed to fetch orders: ${error.message}"
-                            _isLoading.value = false
-                            return@addSnapshotListener
-                        }
-                        if (snapshot != null) {
-                            val ordersList = snapshot.documents.mapNotNull { doc ->
-                                doc.toObject(Order::class.java)?.copy(orderId = doc.id)
-                            }
-                            Log.d("OrderViewModel", "Fetched orders successfully: $ordersList")
-                            _orders.value = ordersList
-                            _isLoading.value = false
-                        }
+
+                ordersListener = query.addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        _error.value = "Failed to fetch orders: ${error.message}"
+                        _isLoading.value = false
+                        return@addSnapshotListener
                     }
+                    if (snapshot != null) {
+                        val newOrders = snapshot.documents.mapNotNull { doc ->
+                            doc.toObject(Order::class.java)?.copy(orderId = doc.id)
+                        }
+                        // Loại bỏ trùng lặp dựa trên orderId
+                        val uniqueOrders = newOrders.distinctBy { it.orderId }
+                        _orders.value = uniqueOrders.sortedByDescending { it.createdAt?.seconds }
+                        _isLoading.value = false
+                    }
+                }
             } catch (e: Exception) {
-                Log.e("OrderViewModel", "Exception during fetchOrders: ${e.message}")
                 _error.value = "Error: ${e.message}"
                 _isLoading.value = false
             }
@@ -81,26 +91,25 @@ class OrderViewModel @Inject constructor() : ViewModel() {
     fun fetchOrderById(orderId: String) {
         viewModelScope.launch {
             try {
-                Log.d("OrderViewModel", "Fetching order by ID: $orderId")
                 val document = firestore.collection("orders").document(orderId).get().await()
                 if (document.exists()) {
                     val order = document.toObject(Order::class.java)?.copy(orderId = document.id)
                     if (order != null) {
-                        Log.d("OrderViewModel", "Order found: $order")
                         val currentOrders = _orders.value.toMutableList()
+                        // Chỉ thêm nếu orderId chưa tồn tại
                         if (!currentOrders.any { it.orderId == orderId }) {
                             currentOrders.add(order)
                             _orders.value = currentOrders.sortedByDescending { it.createdAt?.seconds }
-                            Log.d("OrderViewModel", "Updated orders list: ${_orders.value}")
+                        } else {
+                            // Cập nhật nếu đã tồn tại
+                            val updatedOrders = currentOrders.map {
+                                if (it.orderId == orderId) order else it
+                            }
+                            _orders.value = updatedOrders.sortedByDescending { it.createdAt?.seconds }
                         }
-                    } else {
-                        Log.d("OrderViewModel", "Order not found for ID: $orderId")
                     }
-                } else {
-                    Log.d("OrderViewModel", "Document does not exist for orderId: $orderId")
                 }
             } catch (e: Exception) {
-                Log.e("OrderViewModel", "Error fetching order by ID: ${e.message}")
                 _error.value = "Error fetching order: ${e.message}"
             }
         }
@@ -109,11 +118,9 @@ class OrderViewModel @Inject constructor() : ViewModel() {
     fun submitReview(orderId: String, rating: Float, comment: String) {
         viewModelScope.launch {
             try {
-                Log.d("OrderViewModel", "Submitting review for orderId: $orderId")
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 val userId = currentUser?.uid
                 if (userId == null) {
-                    Log.e("OrderViewModel", "User not logged in")
                     _error.value = "Please log in to submit a review"
                     return@launch
                 }
@@ -131,30 +138,90 @@ class OrderViewModel @Inject constructor() : ViewModel() {
                     .set(reviewData)
                     .await()
 
-                Log.d("OrderViewModel", "Review submitted successfully for orderId: $orderId")
+                // Cập nhật hasReviewed
+                firestore.collection("orders")
+                    .document(orderId)
+                    .update("hasReviewed", true)
+                    .await()
+
+                // Cập nhật danh sách orders
+                val updatedOrders = _orders.value.map { order ->
+                    if (order.orderId == orderId) order.copy(hasReviewed = true) else order
+                }
+                _orders.value = updatedOrders
             } catch (e: Exception) {
-                Log.e("OrderViewModel", "Error submitting review: ${e.message}")
                 _error.value = "Error submitting review: ${e.message}"
             }
         }
     }
 
+    fun cancelOrder(orderId: String) {
+        viewModelScope.launch {
+            try {
+                firestoreRepository.updateOrderStatus(orderId, "Canceled")
+                val updatedOrders = _orders.value.map { order ->
+                    if (order.orderId == orderId) order.copy(status = "Canceled", canceledAt = Timestamp.now()) else order
+                }
+                _orders.value = updatedOrders
+            } catch (e: Exception) {
+                _error.value = "Error canceling order: ${e.message}"
+            }
+        }
+    }
+
+    fun reOrderItems(order: Order, cartViewModel: CartViewModel) {
+        viewModelScope.launch {
+            try {
+                _reOrderResult.value = null
+                order.items.forEach { orderItem ->
+                    val productResult = firestoreRepository.getProductById(orderItem.productId)
+                    if (productResult.isSuccess) {
+                        val product = productResult.getOrNull()
+                        if (product != null && product.quantityInStock.toInt() >= orderItem.quantity) {
+                            cartViewModel.addToCart(
+                                item = CartItem(
+                                    id = "",
+                                    productId = orderItem.productId,
+                                    productName = orderItem.name,
+                                    image = orderItem.imageUrl,
+                                    price = orderItem.price.toDouble(),
+                                    quantity = orderItem.quantity
+                                )
+                            )
+                        } else {
+                            _reOrderResult.value = "Sản phẩm ${orderItem.name} đã hết hàng!"
+                            return@launch
+                        }
+                    } else {
+                        _reOrderResult.value = "Không thể kiểm tra tồn kho!"
+                        return@launch
+                    }
+                }
+                _reOrderResult.value = "Đã thêm vào giỏ hàng!"
+                cartViewModel.updateCart() // Đảm bảo cập nhật giỏ hàng
+            } catch (e: Exception) {
+                _reOrderResult.value = "Lỗi khi thêm vào giỏ hàng: ${e.message}"
+            }
+        }
+    }
+
+    fun resetReOrderResult() {
+        _reOrderResult.value = null
+    }
+
     fun refreshOrdersAfterPayment() {
         viewModelScope.launch {
             try {
-                Log.d("OrderViewModel", "Refreshing orders after payment")
                 _isLoading.value = true
                 _error.value = null
 
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 val userId = currentUser?.uid
                 if (userId == null) {
-                    Log.e("OrderViewModel", "User not logged in")
                     _error.value = "Please log in to refresh orders"
                     _isLoading.value = false
                     return@launch
                 }
-                Log.d("OrderViewModel", "Refreshing orders for userId = $userId")
 
                 val snapshot = firestore.collection("orders")
                     .whereEqualTo("userId", userId)
@@ -165,14 +232,18 @@ class OrderViewModel @Inject constructor() : ViewModel() {
                 val ordersList = snapshot.documents.mapNotNull { doc ->
                     doc.toObject(Order::class.java)?.copy(orderId = doc.id)
                 }
-                Log.d("OrderViewModel", "Refreshed orders successfully: $ordersList")
-                _orders.value = ordersList
+                // Loại bỏ trùng lặp dựa trên orderId
+                _orders.value = ordersList.distinctBy { it.orderId }
                 _isLoading.value = false
             } catch (e: Exception) {
-                Log.e("OrderViewModel", "Error refreshing orders: ${e.message}")
                 _error.value = "Error refreshing orders: ${e.message}"
                 _isLoading.value = false
             }
         }
+    }
+
+    override fun onCleared() {
+        ordersListener?.remove() // Xóa listener khi ViewModel bị hủy
+        super.onCleared()
     }
 }

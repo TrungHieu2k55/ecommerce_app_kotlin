@@ -4,10 +4,10 @@ import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Check
@@ -17,7 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -41,29 +44,22 @@ fun OrderDetailScreen(
     val error by orderViewModel.error.collectAsState()
     val order = orders.find { it.orderId == orderId }
 
-    // Log giá trị orderId khi vào màn hình và thử lấy lại dữ liệu nếu không tìm thấy đơn hàng
+    // Retry logic for fetching order
     LaunchedEffect(Unit) {
-        Log.d("OrderDetailScreen", "orderId received: $orderId")
-        repeat(5) { // Thử tối đa 5 lần
-            orderViewModel.fetchOrders()
-            if (orders.any { it.orderId == orderId }) {
-                Log.d("OrderDetailScreen", "Order found after retry: $orderId")
-                return@LaunchedEffect
+        if (order == null) {
+            Log.d("OrderDetailScreen", "orderId received: $orderId")
+            repeat(3) {
+                orderViewModel.fetchOrders()
+                if (orders.any { it.orderId == orderId }) {
+                    Log.d("OrderDetailScreen", "Order found after retry: $orderId")
+                    return@LaunchedEffect
+                }
+                Log.d("OrderDetailScreen", "Order not found, retrying... Attempt: ${it + 1}")
+                delay(1000)
             }
-            Log.d("OrderDetailScreen", "Order not found, retrying... Attempt: ${it + 1}")
-            delay(2000) // Chờ 2 giây trước khi thử lại
+            Log.d("OrderDetailScreen", "Order not found after retries, fetching directly: $orderId")
+            orderViewModel.fetchOrderById(orderId)
         }
-        Log.d("OrderDetailScreen", "Order not found after 5 retries, fetching directly: $orderId")
-        // Thử lấy trực tiếp đơn hàng từ Firestore
-        orderViewModel.fetchOrderById(orderId)
-    }
-
-    // Log trạng thái của orders, isLoading, và error mỗi khi chúng thay đổi
-    LaunchedEffect(orders, isLoading, error) {
-        Log.d("OrderDetailScreen", "orders: $orders")
-        Log.d("OrderDetailScreen", "isLoading: $isLoading")
-        Log.d("OrderDetailScreen", "error: $error")
-        Log.d("OrderDetailScreen", "order found: $order")
     }
 
     Scaffold(
@@ -90,56 +86,70 @@ fun OrderDetailScreen(
         },
         containerColor = Color.White
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (isLoading) {
-                Log.d("OrderDetailScreen", "Showing loading state")
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = Color(0xFF4FC3F7))
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFF4FC3F7))
+            }
+        } else if (error != null) {
+            if (error == "Please log in to view your orders") {
+                LaunchedEffect(Unit) {
+                    navController.navigate("login_screen")
                 }
-            } else if (error != null) {
-                Log.d("OrderDetailScreen", "Showing error state: $error")
-                if (error == "Please log in to view your orders") {
-                    LaunchedEffect(Unit) {
-                        navController.navigate("login_screen") // Điều hướng đến màn hình đăng nhập
-                    }
-                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = error ?: "Đã xảy ra lỗi",
+                    color = Color.Red,
+                    fontSize = 16.sp
+                )
+            }
+        } else if (order != null) {
+            if (order.items.any { it.imageUrl.isBlank() || it.price < 0 || it.quantity <= 0 } ||
+                order.totalPrice < 0 ||
+                order.shippingAddress.isBlank()
+            ) {
+                Log.e("OrderDetailScreen", "Dữ liệu order không hợp lệ: ${order.items}")
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = error ?: "Đã xảy ra lỗi",
-                        color = Color.Red,
-                        fontSize = 16.sp
+                        text = "Dữ liệu đơn hàng không hợp lệ",
+                        fontSize = 18.sp,
+                        color = Color.Red
                     )
                 }
-            } else if (order != null) {
-                Log.d("OrderDetailScreen", "Showing order details for order: $order")
+            } else {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .padding(paddingValues)
+                        .padding(horizontal = 16.dp)
+                        .verticalScroll(rememberScrollState()) // Thay LazyColumn bằng Column + verticalScroll
                 ) {
                     // Order status timeline
                     OrderStatusTimeline(order)
-
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Order items
                     OrderItemsSection(order)
-
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Shipping details
                     ShippingDetailsSection(order)
-
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Total price
@@ -169,19 +179,40 @@ fun OrderDetailScreen(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Leave Review button if Delivered and not reviewed
+                    if (order.status == "Delivered" && !order.hasReviewed) {
+                        Button(
+                            onClick = { navController.navigate("leave_review/${order.orderId}") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4FC3F7))
+                        ) {
+                            Text(
+                                text = "Leave Review",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
-            } else {
-                Log.d("OrderDetailScreen", "Showing 'Không tìm thấy đơn hàng' state")
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Không tìm thấy đơn hàng",
-                        fontSize = 18.sp,
-                        color = Color.Red
-                    )
-                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Không tìm thấy đơn hàng",
+                    fontSize = 18.sp,
+                    color = Color.Red
+                )
             }
         }
     }
@@ -189,51 +220,87 @@ fun OrderDetailScreen(
 
 @Composable
 fun OrderStatusTimeline(order: Order) {
-    val statusList = listOf(
-        "Delivered" to (order.status == "Delivered"),
-        "Shipped" to (order.status == "Shipped" || order.status == "Delivered"),
-        "Order Confirmed" to (order.status == "Processing" || order.status == "Shipped" || order.status == "Delivered"),
-        "Order Placed" to true
-    )
-    val dateFormatter = SimpleDateFormat("dd MMM", Locale.getDefault())
-    val orderDate = order.createdAt?.toDate()?.let { dateFormatter.format(it) } ?: "Unknown"
+    val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+    val createdAt = order.createdAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+    val inProgressAt = order.inProgressAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+    val shippedAt = order.shippedAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+    val deliveredAt = order.deliveredAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+    val canceledAt = order.canceledAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        statusList.forEach { (status, isActive) ->
+    val statusList = listOf(
+        Triple("Delivered", order.status == "Delivered", deliveredAt),
+        Triple("Shipped", order.status == "Shipped" || order.status == "Delivered", shippedAt),
+        Triple(
+            "Order Confirmed",
+            order.status == "Processing" || order.status == "Shipped" || order.status == "Delivered",
+            inProgressAt
+        ),
+        Triple("Order Placed", true, createdAt)
+    ).take(4)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+    ) {
+        statusList.forEachIndexed { index, (status, isActive, date) ->
             StatusTimelineItem(
-                status = status,
-                isActive = isActive,
-                date = orderDate
+                status = if (order.status == "Canceled" && index == 0) "Canceled" else status,
+                isActive = if (order.status == "Canceled") false else isActive,
+                date = if (order.status == "Canceled" && index == 0) canceledAt else date,
+                isLast = index == statusList.size - 1
             )
         }
     }
 }
 
 @Composable
-fun StatusTimelineItem(status: String, isActive: Boolean, date: String) {
+fun StatusTimelineItem(
+    status: String,
+    isActive: Boolean,
+    date: String,
+    isLast: Boolean,
+    modifier: Modifier = Modifier
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .wrapContentHeight(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Timeline circle indicator
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(
-                    if (isActive) Color(0xFF4FC3F7)
-                    else Color(0xFFEEEEEE)
-                ),
-            contentAlignment = Alignment.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(40.dp)
         ) {
-            if (status == "Delivered" && isActive) {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = "Completed",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isActive) Color(0xFF4FC3F7)
+                        else Color(0xFFEEEEEE)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (status == "Delivered" && isActive) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = "Completed",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(24.dp)
+                        .background(
+                            if (isActive) Color(0xFF4FC3F7)
+                            else Color(0xFFEEEEEE)
+                        )
                 )
             }
         }
@@ -241,7 +308,9 @@ fun StatusTimelineItem(status: String, isActive: Boolean, date: String) {
         Spacer(modifier = Modifier.width(16.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -249,13 +318,17 @@ fun StatusTimelineItem(status: String, isActive: Boolean, date: String) {
                 text = status,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
-                color = Color.Black
+                color = Color.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             Text(
                 text = date,
                 fontSize = 12.sp,
-                color = Color.Gray
+                color = Color.Gray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -263,7 +336,12 @@ fun StatusTimelineItem(status: String, isActive: Boolean, date: String) {
 
 @Composable
 fun OrderItemsSection(order: Order) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -284,12 +362,20 @@ fun OrderItemsSection(order: Order) {
             )
         }
 
-        LazyColumn {
-            items(order.items) { item ->
+        if (order.items.isEmpty()) {
+            Text(
+                text = "Không có sản phẩm trong đơn hàng",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            order.items.take(50).forEach { item ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = 4.dp)
+                        .wrapContentHeight(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8)),
                     shape = RoundedCornerShape(8.dp)
@@ -297,12 +383,17 @@ fun OrderItemsSection(order: Order) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .wrapContentHeight()
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Hình ảnh sản phẩm
+                        Log.d("OrderItemsSection", "Loading image: ${item.imageUrl}")
                         Image(
-                            painter = rememberAsyncImagePainter(item.imageUrl),
+                            painter = rememberAsyncImagePainter(
+                                model = item.imageUrl,
+                                placeholder = painterResource(id = android.R.drawable.ic_menu_gallery),
+                                error = painterResource(id = android.R.drawable.ic_menu_report_image)
+                            ),
                             contentDescription = item.name,
                             modifier = Modifier
                                 .size(50.dp)
@@ -312,12 +403,17 @@ fun OrderItemsSection(order: Order) {
 
                         Spacer(modifier = Modifier.width(12.dp))
 
-                        // Thông tin sản phẩm
-                        Column {
+                        Column(
+                            modifier = Modifier
+                                .wrapContentHeight()
+                                .weight(1f) // Đảm bảo Column không mở rộng quá mức
+                        ) {
                             Text(
-                                text = item.name,
+                                text = item.name ?: "Unknown",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Số lượng: ${item.quantity}",
@@ -340,7 +436,20 @@ fun OrderItemsSection(order: Order) {
 
 @Composable
 fun ShippingDetailsSection(order: Order) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val (address, phoneNumber) = remember(order.shippingAddress) {
+        if (order.shippingAddress.contains("| Số điện thoại: ")) {
+            val parts = order.shippingAddress.split("| Số điện thoại: ")
+            parts[0].trim() to parts[1].trim()
+        } else {
+            order.shippingAddress to "Không có thông tin"
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+    ) {
         Text(
             text = "Thông tin giao hàng",
             fontSize = 14.sp,
@@ -349,7 +458,9 @@ fun ShippingDetailsSection(order: Order) {
         )
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8)),
             shape = RoundedCornerShape(8.dp)
@@ -357,17 +468,22 @@ fun ShippingDetailsSection(order: Order) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .wrapContentHeight()
                     .padding(16.dp)
             ) {
                 Text(
-                    text = order.shippingAddress,
-                    fontSize = 14.sp
+                    text = address,
+                    fontSize = 14.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Số điện thoại: Không có thông tin",
+                    text = "Số điện thoại: $phoneNumber",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = Color.Gray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
