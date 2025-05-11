@@ -35,6 +35,7 @@ import com.example.duan.View.checkout.ShippingTypeScreen
 import com.example.duan.View.home.CategoryProductsScreen
 import com.example.duan.View.home.EditAddressScreen
 import com.example.duan.View.home.EditProfilePictureScreen
+import com.example.duan.View.home.FavoriteScreen
 import com.example.duan.View.home.HomeScreen
 import com.example.duan.View.home.NotificationsScreen
 import com.example.duan.View.home.OrderDetailScreen
@@ -156,6 +157,24 @@ fun AppNavigation(
                     categoryName = categoryName,
                     navController = navController
                 )
+            }
+            composable(
+                route = "favorite/{userId}",
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                if (userId.isNotEmpty()) {
+                    FavoriteScreen(
+                        userId = userId,
+                        navController = navController
+                    )
+                } else {
+                    LaunchedEffect(Unit) {
+                        navController.navigate("login") {
+                            popUpTo("main") { inclusive = false }
+                        }
+                    }
+                }
             }
             composable("search") {
                 SearchScreen(navController = navController, authViewModel = authViewModel)

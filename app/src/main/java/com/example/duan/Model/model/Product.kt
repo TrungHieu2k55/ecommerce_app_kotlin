@@ -20,7 +20,8 @@ data class Product(
     val gender: String? = null,
     val quantitySold: Int = 0,
     val addedToCartCount: Int = 0,
-    val views: Int = 0
+    val views: Int = 0,
+    val reviews: List<Review> = emptyList()
 ) {
 
 

@@ -49,7 +49,7 @@ fun OrderScreen(
             scope.launch {
                 snackbarHostState.showSnackbar(result)
                 if (result == "Đã thêm vào giỏ hàng!") {
-                    navController.navigate("cart")
+                    navController.navigate("my_cart")
                 }
                 orderViewModel.resetReOrderResult()
             }
@@ -184,77 +184,66 @@ fun OrderItem(
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F6F6)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .wrapContentHeight()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .wrapContentHeight()
-                    .padding(end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val firstItem = order.items.firstOrNull()
-                if (firstItem == null) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Gray),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No Image",
-                            fontSize = 12.sp,
-                            color = Color.White
-                        )
-                    }
-                } else {
+            // Hiển thị tất cả các item trong đơn hàng
+            order.items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Image(
                         painter = rememberAsyncImagePainter(
-                            model = firstItem.imageUrl,
+                            model = item.imageUrl,
                             placeholder = painterResource(id = android.R.drawable.ic_menu_gallery),
                             error = painterResource(id = android.R.drawable.ic_menu_report_image)
                         ),
-                        contentDescription = firstItem.name,
+                        contentDescription = item.name,
                         modifier = Modifier
                             .size(64.dp)
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
                     )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(
+                        modifier = Modifier
+                            .wrapContentHeight()
+                    ) {
+                        Text(
+                            text = item.name,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Qty: ${item.quantity}pcs",
+                            fontSize = 14.sp,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "$${String.format("%.2f", item.price.toDouble())}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(
-                    modifier = Modifier
-                        .wrapContentHeight()
-                ) {
-                    Text(
-                        text = firstItem?.name ?: "Unknown Item",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Qty: ${firstItem?.quantity ?: 0}pcs",
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "$${String.format("%.2f", (firstItem?.price?.toDouble() ?: 0.0))}",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                if (order.items.indexOf(item) < order.items.size - 1) {
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
 
+            // Nút hành động (Track, Leave Review, Re-Order)
             Button(
                 onClick = {
                     when (order.status) {
@@ -267,14 +256,16 @@ fun OrderItem(
                         "Canceled" -> {
                             orderViewModel.reOrderItems(order, cartViewModel)
                         }
+
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4FC3F7)),
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
+                    .align(Alignment.End)
                     .height(40.dp)
                     .width(120.dp)
-                    .wrapContentHeight(),
+                    .padding(top = 8.dp),
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Box(

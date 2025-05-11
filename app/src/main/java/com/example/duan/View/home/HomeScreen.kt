@@ -10,16 +10,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,6 +33,7 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.example.duan.Model.model.Product
+import com.example.duan.R
 import com.example.duan.View.components.BottomNavigationBar
 import com.example.duan.ViewModel.usecase.auth.AuthViewModel
 import com.example.duan.ViewModel.usecase.product.ProductViewModel
@@ -36,11 +41,6 @@ import com.google.gson.Gson
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import com.example.duan.R
 
 @Composable
 fun HomeScreen(
@@ -49,6 +49,8 @@ fun HomeScreen(
     userName: String?,
     productViewModel: ProductViewModel = hiltViewModel()
 ) {
+    val userId = authViewModel.getCurrentUserId() ?: return // Chuyển hướng đến đăng nhập nếu null
+
     // Sử dụng .collectAsState() để lấy giá trị từ StateFlow
     val topSellingProducts by productViewModel.topSellingProducts.collectAsState()
     val newInProducts by productViewModel.newInProducts.collectAsState()
@@ -116,6 +118,7 @@ fun HomeScreen(
                     } else {
                         TopSellingProductRow(
                             products = topSellingProducts,
+                            userId = userId,
                             navController = navController,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -150,6 +153,7 @@ fun HomeScreen(
                     } else {
                         NewInProductRow(
                             products = newInProducts,
+                            userId = userId,
                             navController = navController,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -184,6 +188,7 @@ fun HomeScreen(
                     } else {
                         TrendingProductRow(
                             products = trendingProducts,
+                            userId = userId,
                             navController = navController,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -218,6 +223,7 @@ fun HomeScreen(
                     } else {
                         HoodiesGrid(
                             products = hoodiesProducts,
+                            userId = userId,
                             navController = navController,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -277,7 +283,7 @@ fun TopBar(navController: NavController, user: String?, authViewModel: AuthViewM
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(CircleShape),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        contentScale = ContentScale.Crop
                     )
                 }
             }
@@ -467,8 +473,10 @@ fun SectionHeader(title: String, onSeeAllClick: () -> Unit) {
 @Composable
 fun TopSellingProductRow(
     products: List<Product>,
+    userId: String,
     navController: NavController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    productViewModel: ProductViewModel = hiltViewModel()
 ) {
     LazyRow(
         modifier = modifier,
@@ -477,6 +485,8 @@ fun TopSellingProductRow(
         items(products) { product ->
             ProductItem(
                 product = product,
+                userId = userId,
+                productViewModel = productViewModel,
                 onClick = {
                     val productJson = Gson().toJson(product)
                     val encodedProductJson = URLEncoder.encode(productJson, StandardCharsets.UTF_8.toString())
@@ -490,8 +500,10 @@ fun TopSellingProductRow(
 @Composable
 fun NewInProductRow(
     products: List<Product>,
+    userId: String,
     navController: NavController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    productViewModel: ProductViewModel = hiltViewModel()
 ) {
     LazyRow(
         modifier = modifier,
@@ -500,6 +512,8 @@ fun NewInProductRow(
         items(products) { product ->
             ProductItem(
                 product = product,
+                userId = userId,
+                productViewModel = productViewModel,
                 onClick = {
                     val productJson = Gson().toJson(product)
                     val encodedProductJson = URLEncoder.encode(productJson, StandardCharsets.UTF_8.toString())
@@ -513,8 +527,10 @@ fun NewInProductRow(
 @Composable
 fun TrendingProductRow(
     products: List<Product>,
+    userId: String,
     navController: NavController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    productViewModel: ProductViewModel = hiltViewModel()
 ) {
     LazyRow(
         modifier = modifier,
@@ -523,6 +539,8 @@ fun TrendingProductRow(
         items(products) { product ->
             ProductItem(
                 product = product,
+                userId = userId,
+                productViewModel = productViewModel,
                 onClick = {
                     val productJson = Gson().toJson(product)
                     val encodedProductJson = URLEncoder.encode(productJson, StandardCharsets.UTF_8.toString())
@@ -536,8 +554,10 @@ fun TrendingProductRow(
 @Composable
 fun HoodiesGrid(
     products: List<Product>,
+    userId: String,
     navController: NavController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    productViewModel: ProductViewModel = hiltViewModel()
 ) {
     Column(
         modifier = modifier,
@@ -552,6 +572,8 @@ fun HoodiesGrid(
                     Box(modifier = Modifier.weight(1f)) {
                         ProductItem(
                             product = product,
+                            userId = userId,
+                            productViewModel = productViewModel,
                             onClick = {
                                 val productJson = Gson().toJson(product)
                                 val encodedProductJson = URLEncoder.encode(productJson, StandardCharsets.UTF_8.toString())
@@ -569,8 +591,17 @@ fun HoodiesGrid(
 }
 
 @Composable
-fun ProductItem(product: Product, onClick: () -> Unit) {
+fun ProductItem(
+    product: Product,
+    userId: String,
+    onClick: () -> Unit,
+    productViewModel: ProductViewModel = hiltViewModel()
+) {
     var isFavorite by remember { mutableStateOf(false) }
+
+    LaunchedEffect(product.id, userId) {
+        isFavorite = productViewModel.isProductFavorited(userId, product.id)
+    }
 
     Column(
         modifier = Modifier
@@ -616,7 +647,10 @@ fun ProductItem(product: Product, onClick: () -> Unit) {
                     .padding(8.dp)
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.8f))
-                    .clickable { isFavorite = !isFavorite },
+                    .clickable {
+                        productViewModel.toggleFavorite(userId, product)
+                        isFavorite = !isFavorite
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -696,6 +730,8 @@ fun CategoryProductsScreen(
     val isLoading by productViewModel.isLoading.collectAsState()
     val errorMessage by productViewModel.errorMessage.collectAsState()
 
+    val userId = hiltViewModel<AuthViewModel>().getCurrentUserId() ?: return
+
     // Gọi hàm fetch tương ứng dựa trên categoryName
     LaunchedEffect(categoryName) {
         when (categoryName) {
@@ -772,6 +808,7 @@ fun CategoryProductsScreen(
                     } else {
                         HoodiesGrid(
                             products = products,
+                            userId = userId,
                             navController = navController,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -785,3 +822,4 @@ fun CategoryProductsScreen(
         }
     }
 }
+

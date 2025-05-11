@@ -158,9 +158,9 @@ fun SettingScreen(navController: NavController, authViewModel: AuthViewModel) {
                             modifier = Modifier
                                 .height(36.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF6750A4).copy(alpha = 0.1f)),
+                                .background(Color(0xFF4FC3F7).copy(alpha = 0.1f)),
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = Color(0xFF6750A4)
+                                contentColor = Color(0xFF4FC3F7)
                             )
                         ) {
                             Text(

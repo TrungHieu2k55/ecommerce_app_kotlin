@@ -343,20 +343,28 @@ class FirestoreRepository @Inject constructor() {
             val tempLockRef = firestore.collection("temp_locks").document(order.orderId)
             firestore.runTransaction { transaction ->
                 val orderRef = firestore.collection("orders").document(order.orderId)
-                val lockSnapshot = transaction.get(tempLockRef)
+
+                // Thực hiện tất cả thao tác đọc trước
+                val lockSnapshot = transaction.get(tempLockRef) // Đọc 1
                 if (lockSnapshot.exists()) {
                     Log.d("FirestoreRepository", "Order is being processed, skipping: ${order.orderId}")
                     return@runTransaction
                 }
-                val snapshot = transaction.get(orderRef)
+
+                val snapshot = transaction.get(orderRef) // Đọc 2
                 if (snapshot.exists()) {
                     Log.d("FirestoreRepository", "Order with orderId ${order.orderId} already exists, skipping.")
                     return@runTransaction
                 }
-                // Kiểm tra tồn kho trước khi lưu đơn hàng
-                order.items.forEach { item ->
+
+                // Đọc dữ liệu tất cả sản phẩm trước khi ghi
+                val productSnapshots = order.items.map { item ->
                     val productRef = firestore.collection("products").document(item.productId)
-                    val productSnapshot = transaction.get(productRef)
+                    item to transaction.get(productRef) // Đọc 3 (cho tất cả sản phẩm)
+                }
+
+                // Kiểm tra dữ liệu sản phẩm
+                productSnapshots.forEach { (item, productSnapshot) ->
                     if (!productSnapshot.exists()) {
                         Log.e("FirestoreRepository", "Product with ID ${item.productId} does not exist")
                         throw Exception("Product with ID ${item.productId} does not exist")
@@ -366,17 +374,24 @@ class FirestoreRepository @Inject constructor() {
                     if (product == null || product.quantityInStock < item.quantity) {
                         throw Exception("Product ${item.name} is out of stock or insufficient quantity (available: ${product?.quantityInStock}, requested: ${item.quantity})")
                     }
-                    // Giảm số lượng tồn kho
-                    transaction.update(productRef, "quantityInStock", FieldValue.increment(-item.quantity.toLong()))
-                    // Tăng số lượng đã bán
-                    transaction.update(productRef, "quantitySold", FieldValue.increment(item.quantity.toLong()))
                 }
+
+                // Sau khi đã đọc xong, thực hiện tất cả thao tác ghi
+                productSnapshots.forEach { (item, _) ->
+                    val productRef = firestore.collection("products").document(item.productId)
+                    // Giảm số lượng tồn kho
+                    transaction.update(productRef, "quantityInStock", FieldValue.increment(-item.quantity.toLong())) // Ghi 1
+                    // Tăng số lượng đã bán
+                    transaction.update(productRef, "quantitySold", FieldValue.increment(item.quantity.toLong())) // Ghi 2
+                }
+
                 // Thiết lập thời gian tạo
                 val orderWithTimestamp = order.copy(createdAt = Timestamp.now())
                 Log.d("FirestoreRepository", "Saving order with document ID: ${order.orderId}, userId: ${order.userId}, data: $orderWithTimestamp")
-                transaction.set(tempLockRef, mapOf("createdAt" to Timestamp.now()))
-                transaction.set(orderRef, orderWithTimestamp)
+                transaction.set(tempLockRef, mapOf("createdAt" to Timestamp.now())) // Ghi 3
+                transaction.set(orderRef, orderWithTimestamp) // Ghi 4
             }.await()
+
             tempLockRef.delete().await()
             // Xóa giỏ hàng sau khi lưu thành công
             clearCart(order.userId)
@@ -415,6 +430,79 @@ class FirestoreRepository @Inject constructor() {
                 .update("views", FieldValue.increment(1))
                 .await()
             Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Thêm một sản phẩm vào danh sách yêu thích của người dùng
+    suspend fun addFavorite(userId: String, productId: String): Result<Unit> {
+        return try {
+            firestore.collection("users")
+                .document(userId)
+                .collection("favorites")
+                .document(productId)
+                .set(mapOf("productId" to productId))
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Xóa một sản phẩm khỏi danh sách yêu thích của người dùng
+    suspend fun removeFavorite(userId: String, productId: String): Result<Unit> {
+        return try {
+            firestore.collection("users")
+                .document(userId)
+                .collection("favorites")
+                .document(productId)
+                .delete()
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Lấy tất cả các sản phẩm được yêu thích của người dùng
+    suspend fun getFavorites(userId: String): Result<List<Product>> {
+        return try {
+            val favoriteDocs = firestore.collection("users")
+                .document(userId)
+                .collection("favorites")
+                .get()
+                .await()
+
+            val productIds = favoriteDocs.documents.mapNotNull { it.getString("productId") }
+            val products = mutableListOf<Product>()
+
+            for (productId in productIds) {
+                val productDoc = firestore.collection("products")
+                    .document(productId)
+                    .get()
+                    .await()
+                val product = productDoc.toObject(Product::class.java)?.copy(id = productDoc.id)
+                if (product != null) {
+                    products.add(product)
+                }
+            }
+            Result.success(products)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Kiểm tra xem một sản phẩm có được yêu thích bởi người dùng không
+    suspend fun isFavorited(userId: String, productId: String): Result<Boolean> {
+        return try {
+            val doc = firestore.collection("users")
+                .document(userId)
+                .collection("favorites")
+                .document(productId)
+                .get()
+                .await()
+            Result.success(doc.exists())
         } catch (e: Exception) {
             Result.failure(e)
         }

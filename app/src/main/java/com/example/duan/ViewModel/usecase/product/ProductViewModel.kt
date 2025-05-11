@@ -51,6 +51,10 @@ class ProductViewModel @Inject constructor(
     private val _selectedProduct = MutableStateFlow<Product?>(null)
     val selectedProduct: StateFlow<Product?> = _selectedProduct.asStateFlow()
 
+    // StateFlow mới cho các sản phẩm được yêu thích
+    private val _favoritedProducts = MutableStateFlow<List<Product>>(emptyList())
+    val favoritedProducts: StateFlow<List<Product>> = _favoritedProducts.asStateFlow()
+
     // Khởi tạo để lấy tất cả sản phẩm khi ViewModel được tạo
     init {
         fetchAllProducts()
@@ -213,5 +217,51 @@ class ProductViewModel @Inject constructor(
                 Log.d("ProductViewModel", "Incremented views for product: $productId")
             }
         }
+    }
+
+    // Các phương thức mới cho danh sách yêu thích
+    fun fetchFavoritedProducts(userId: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            val result = repository.getFavorites(userId)
+            if (result.isSuccess) {
+                _favoritedProducts.value = result.getOrNull() ?: emptyList()
+                Log.d("ProductViewModel", "Đã lấy ${result.getOrNull()?.size} sản phẩm yêu thích cho người dùng $userId")
+            } else {
+                _errorMessage.value = result.exceptionOrNull()?.message ?: "Không thể tải sản phẩm yêu thích"
+                Log.e("ProductViewModel", "Lỗi khi lấy sản phẩm yêu thích: ${_errorMessage.value}")
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun toggleFavorite(userId: String, product: Product) {
+        viewModelScope.launch {
+            val isCurrentlyFavorited = repository.isFavorited(userId, product.id).getOrNull() ?: false
+            if (isCurrentlyFavorited) {
+                val result = repository.removeFavorite(userId, product.id)
+                if (result.isSuccess) {
+                    _favoritedProducts.value = _favoritedProducts.value.filter { it.id != product.id }
+                    Log.d("ProductViewModel", "Đã xóa sản phẩm ${product.id} khỏi danh sách yêu thích")
+                } else {
+                    _errorMessage.value = result.exceptionOrNull()?.message ?: "Không thể xóa khỏi danh sách yêu thích"
+                    Log.e("ProductViewModel", "Lỗi khi xóa khỏi danh sách yêu thích: ${_errorMessage.value}")
+                }
+            } else {
+                val result = repository.addFavorite(userId, product.id)
+                if (result.isSuccess) {
+                    _favoritedProducts.value = _favoritedProducts.value + product
+                    Log.d("ProductViewModel", "Đã thêm sản phẩm ${product.id} vào danh sách yêu thích")
+                } else {
+                    _errorMessage.value = result.exceptionOrNull()?.message ?: "Không thể thêm vào danh sách yêu thích"
+                    Log.e("ProductViewModel", "Lỗi khi thêm vào danh sách yêu thích: ${_errorMessage.value}")
+                }
+            }
+        }
+    }
+
+    suspend fun isProductFavorited(userId: String, productId: String): Boolean {
+        return repository.isFavorited(userId, productId).getOrNull() ?: false
     }
 }

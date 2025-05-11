@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
@@ -17,14 +18,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.example.duan.ViewModel.usecase.auth.AuthViewModel
 
 @Composable
 fun BottomNavigationBar(navController: NavController) {
     val items = listOf(
         "home" to Icons.Default.Home,
-        "notification" to Icons.Default.Notifications,
+        "favorite" to Icons.Default.Favorite,
         "order" to Icons.Default.ShoppingBag,
         "setting" to Icons.Default.Person
     )
@@ -32,6 +35,10 @@ fun BottomNavigationBar(navController: NavController) {
     // Lấy route hiện tại để xác định mục nào đang được chọn
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    // Lấy userId từ AuthViewModel
+    val authViewModel: AuthViewModel = hiltViewModel()
+    val userId = authViewModel.getCurrentUserId()
 
     Row(
         modifier = Modifier
@@ -43,16 +50,37 @@ fun BottomNavigationBar(navController: NavController) {
         items.forEach { (route, icon) ->
             BottomNavItem(
                 icon = icon,
-                isSelected = currentRoute == route,
+                isSelected = currentRoute == route || (route == "favorite" && currentRoute?.startsWith("favorite/") == true),
                 onClick = {
                     // Điều hướng đến route tương ứng
-                    navController.navigate(route) {
-                        // Tránh tạo stack trùng lặp
-                        popUpTo(navController.graph.startDestinationId) {
-                            saveState = true
+                    when (route) {
+                        "favorite" -> {
+                            userId?.let { uid ->
+                                navController.navigate("favorite/$uid") {
+                                    // Tránh tạo stack trùng lặp
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            } ?: run {
+                                // Nếu userId null, điều hướng đến login
+                                navController.navigate("login") {
+                                    popUpTo("main") { inclusive = false }
+                                }
+                            }
                         }
-                        launchSingleTop = true
-                        restoreState = true
+                        else -> {
+                            navController.navigate(route) {
+                                // Tránh tạo stack trùng lặp
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
                     }
                 }
             )

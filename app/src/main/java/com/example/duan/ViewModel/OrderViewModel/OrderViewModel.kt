@@ -115,7 +115,7 @@ class OrderViewModel @Inject constructor(
         }
     }
 
-    fun submitReview(orderId: String, rating: Float, comment: String) {
+    fun submitReviewForProduct(orderId: String, productId: String, rating: Float, comment: String) {
         viewModelScope.launch {
             try {
                 val currentUser = FirebaseAuth.getInstance().currentUser
@@ -125,35 +125,72 @@ class OrderViewModel @Inject constructor(
                     return@launch
                 }
 
-                val reviewData = hashMapOf(
+                val order = _orders.value.find { it.orderId == orderId }
+                if (order == null) {
+                    _error.value = "Order not found"
+                    return@launch
+                }
+
+                // Lấy thông tin người dùng từ Firestore
+                val userProfileResult = firestoreRepository.getUserProfile(userId)
+                val userProfile = if (userProfileResult.isSuccess) {
+                    userProfileResult.getOrNull()
+                } else {
+                    null
+                }
+                val userName = userProfile?.displayName ?: "Unknown User"
+                val userAvatar = userProfile?.photoUrl ?: ""
+
+                val newReview = hashMapOf(
                     "orderId" to orderId,
                     "userId" to userId,
                     "rating" to rating,
                     "comment" to comment,
-                    "createdAt" to Timestamp.now()
+                    "timestamp" to Timestamp.now(),
+                    "userName" to userName, // Thêm tên người dùng
+                    "userAvatar" to userAvatar // Thêm ảnh đại diện
                 )
 
-                firestore.collection("reviews")
+                // Lưu review vào subcollection của sản phẩm
+                firestore.collection("products")
+                    .document(productId)
+                    .collection("reviews")
                     .document("${orderId}_${userId}")
-                    .set(reviewData)
+                    .set(newReview)
                     .await()
 
-                // Cập nhật hasReviewed
-                firestore.collection("orders")
-                    .document(orderId)
-                    .update("hasReviewed", true)
-                    .await()
-
-                // Cập nhật danh sách orders
-                val updatedOrders = _orders.value.map { order ->
-                    if (order.orderId == orderId) order.copy(hasReviewed = true) else order
+                // Kiểm tra xem tất cả sản phẩm trong đơn hàng đã được đánh giá chưa
+                val allItemsReviewed = order.items.all { item ->
+                    firestore.collection("products")
+                        .document(item.productId)
+                        .collection("reviews")
+                        .document("${orderId}_${userId}")
+                        .get()
+                        .await()
+                        .exists()
                 }
-                _orders.value = updatedOrders
+
+                // Nếu tất cả sản phẩm đã được đánh giá, cập nhật hasReviewed
+                if (allItemsReviewed) {
+                    firestore.collection("orders")
+                        .document(orderId)
+                        .update("hasReviewed", true)
+                        .await()
+
+                    val updatedOrders = _orders.value.map { order ->
+                        if (order.orderId == orderId) order.copy(hasReviewed = true) else order
+                    }
+                    _orders.value = updatedOrders
+                }
+
+                Log.d("OrderViewModel", "Review submitted successfully for orderId: $orderId, productId: $productId")
             } catch (e: Exception) {
                 _error.value = "Error submitting review: ${e.message}"
             }
         }
     }
+
+
 
     fun cancelOrder(orderId: String) {
         viewModelScope.launch {
@@ -180,7 +217,7 @@ class OrderViewModel @Inject constructor(
                         if (product != null && product.quantityInStock.toInt() >= orderItem.quantity) {
                             cartViewModel.addToCart(
                                 item = CartItem(
-                                    id = "",
+                                    id = orderItem.productId + System.currentTimeMillis().toString(),
                                     productId = orderItem.productId,
                                     productName = orderItem.name,
                                     image = orderItem.imageUrl,
