@@ -18,6 +18,9 @@ import kotlinx.coroutines.tasks.await
 import com.example.duan.Model.model.CartItem
 import com.example.duan.Model.repository.FirestoreRepository
 import com.example.duan.ViewModel.cart.CartViewModel
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 @HiltViewModel
 class OrderViewModel @Inject constructor(
@@ -61,6 +64,7 @@ class OrderViewModel @Inject constructor(
                 // Xóa listener cũ nếu tồn tại
                 ordersListener?.remove()
 
+                // Sử dụng trường createdAtTimestamp làm Timestamp để sắp xếp
                 val query = firestore.collection("orders")
                     .whereEqualTo("userId", userId)
                     .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -73,11 +77,12 @@ class OrderViewModel @Inject constructor(
                     }
                     if (snapshot != null) {
                         val newOrders = snapshot.documents.mapNotNull { doc ->
-                            doc.toObject(Order::class.java)?.copy(orderId = doc.id)
+                            val order = doc.toObject(Order::class.java)?.copy(orderId = doc.id)
+                            order
                         }
                         // Loại bỏ trùng lặp dựa trên orderId
                         val uniqueOrders = newOrders.distinctBy { it.orderId }
-                        _orders.value = uniqueOrders.sortedByDescending { it.createdAt?.seconds }
+                        _orders.value = uniqueOrders
                         _isLoading.value = false
                     }
                 }
@@ -96,16 +101,14 @@ class OrderViewModel @Inject constructor(
                     val order = document.toObject(Order::class.java)?.copy(orderId = document.id)
                     if (order != null) {
                         val currentOrders = _orders.value.toMutableList()
-                        // Chỉ thêm nếu orderId chưa tồn tại
                         if (!currentOrders.any { it.orderId == orderId }) {
                             currentOrders.add(order)
-                            _orders.value = currentOrders.sortedByDescending { it.createdAt?.seconds }
+                            _orders.value = currentOrders
                         } else {
-                            // Cập nhật nếu đã tồn tại
                             val updatedOrders = currentOrders.map {
                                 if (it.orderId == orderId) order else it
                             }
-                            _orders.value = updatedOrders.sortedByDescending { it.createdAt?.seconds }
+                            _orders.value = updatedOrders
                         }
                     }
                 }
@@ -131,13 +134,8 @@ class OrderViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Lấy thông tin người dùng từ Firestore
                 val userProfileResult = firestoreRepository.getUserProfile(userId)
-                val userProfile = if (userProfileResult.isSuccess) {
-                    userProfileResult.getOrNull()
-                } else {
-                    null
-                }
+                val userProfile = if (userProfileResult.isSuccess) userProfileResult.getOrNull() else null
                 val userName = userProfile?.displayName ?: "Unknown User"
                 val userAvatar = userProfile?.photoUrl ?: ""
 
@@ -146,12 +144,11 @@ class OrderViewModel @Inject constructor(
                     "userId" to userId,
                     "rating" to rating,
                     "comment" to comment,
-                    "timestamp" to Timestamp.now(),
-                    "userName" to userName, // Thêm tên người dùng
-                    "userAvatar" to userAvatar // Thêm ảnh đại diện
+                    "timestamp" to Timestamp.now().toString(), // Lưu dưới dạng chuỗi
+                    "userName" to userName,
+                    "userAvatar" to userAvatar
                 )
 
-                // Lưu review vào subcollection của sản phẩm
                 firestore.collection("products")
                     .document(productId)
                     .collection("reviews")
@@ -159,7 +156,6 @@ class OrderViewModel @Inject constructor(
                     .set(newReview)
                     .await()
 
-                // Kiểm tra xem tất cả sản phẩm trong đơn hàng đã được đánh giá chưa
                 val allItemsReviewed = order.items.all { item ->
                     firestore.collection("products")
                         .document(item.productId)
@@ -170,7 +166,6 @@ class OrderViewModel @Inject constructor(
                         .exists()
                 }
 
-                // Nếu tất cả sản phẩm đã được đánh giá, cập nhật hasReviewed
                 if (allItemsReviewed) {
                     firestore.collection("orders")
                         .document(orderId)
@@ -190,16 +185,40 @@ class OrderViewModel @Inject constructor(
         }
     }
 
-
-
     fun cancelOrder(orderId: String) {
         viewModelScope.launch {
             try {
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                val userId = currentUser?.uid
+                if (userId == null) {
+                    _error.value = "Please log in to cancel the order"
+                    return@launch
+                }
+
+                val order = _orders.value.find { it.orderId == orderId }
+                if (order == null) {
+                    _error.value = "Order not found"
+                    return@launch
+                }
+
+                if (order.status == "Delivered" || order.status == "Canceled") {
+                    _error.value = "Cannot cancel a delivered or already canceled order"
+                    return@launch
+                }
+
                 firestoreRepository.updateOrderStatus(orderId, "Canceled")
+
                 val updatedOrders = _orders.value.map { order ->
-                    if (order.orderId == orderId) order.copy(status = "Canceled", canceledAt = Timestamp.now()) else order
+                    if (order.orderId == orderId) {
+                        order.copy(
+                            status = "Canceled",
+                            canceledAt = Timestamp.now().toString() // Lưu dưới dạng chuỗi
+                        )
+                    } else order
                 }
                 _orders.value = updatedOrders
+
+                Log.d("OrderViewModel", "Order canceled successfully for orderId: $orderId")
             } catch (e: Exception) {
                 _error.value = "Error canceling order: ${e.message}"
             }
@@ -235,7 +254,7 @@ class OrderViewModel @Inject constructor(
                     }
                 }
                 _reOrderResult.value = "Đã thêm vào giỏ hàng!"
-                cartViewModel.updateCart() // Đảm bảo cập nhật giỏ hàng
+                cartViewModel.updateCart()
             } catch (e: Exception) {
                 _reOrderResult.value = "Lỗi khi thêm vào giỏ hàng: ${e.message}"
             }

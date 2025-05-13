@@ -13,6 +13,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 class FirestoreRepository @Inject constructor() {
     val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
@@ -344,80 +347,94 @@ class FirestoreRepository @Inject constructor() {
             firestore.runTransaction { transaction ->
                 val orderRef = firestore.collection("orders").document(order.orderId)
 
-                // Thực hiện tất cả thao tác đọc trước
-                val lockSnapshot = transaction.get(tempLockRef) // Đọc 1
+                // Kiểm tra khóa tạm thời
+                val lockSnapshot = transaction.get(tempLockRef)
                 if (lockSnapshot.exists()) {
-                    Log.d("FirestoreRepository", "Order is being processed, skipping: ${order.orderId}")
+                    Log.d("FirestoreRepository", "Đơn hàng đang được xử lý, bỏ qua: ${order.orderId}")
                     return@runTransaction
                 }
 
-                val snapshot = transaction.get(orderRef) // Đọc 2
+                // Kiểm tra xem đơn hàng đã tồn tại chưa
+                val snapshot = transaction.get(orderRef)
                 if (snapshot.exists()) {
-                    Log.d("FirestoreRepository", "Order with orderId ${order.orderId} already exists, skipping.")
+                    Log.d("FirestoreRepository", "Đơn hàng với orderId ${order.orderId} đã tồn tại, bỏ qua.")
                     return@runTransaction
-                }
-
-                // Đọc dữ liệu tất cả sản phẩm trước khi ghi
-                val productSnapshots = order.items.map { item ->
-                    val productRef = firestore.collection("products").document(item.productId)
-                    item to transaction.get(productRef) // Đọc 3 (cho tất cả sản phẩm)
                 }
 
                 // Kiểm tra dữ liệu sản phẩm
+                val productSnapshots = order.items.map { item ->
+                    val productRef = firestore.collection("products").document(item.productId)
+                    item to transaction.get(productRef)
+                }
+
+                // Xác thực từng sản phẩm
                 productSnapshots.forEach { (item, productSnapshot) ->
                     if (!productSnapshot.exists()) {
-                        Log.e("FirestoreRepository", "Product with ID ${item.productId} does not exist")
-                        throw Exception("Product with ID ${item.productId} does not exist")
+                        Log.e("FirestoreRepository", "Sản phẩm với ID ${item.productId} không tồn tại")
+                        throw Exception("Sản phẩm với ID ${item.productId} không tồn tại")
                     }
                     val product = productSnapshot.toObject(Product::class.java)
-                    Log.d("FirestoreRepository", "Checking product ${item.name}: available=${product?.quantityInStock}, requested=${item.quantity}")
+
+                    // Kiểm tra số lượng tồn kho
+                    Log.d("FirestoreRepository", "Kiểm tra sản phẩm ${item.name}: có sẵn=${product?.quantityInStock}, yêu cầu=${item.quantity}")
                     if (product == null || product.quantityInStock < item.quantity) {
-                        throw Exception("Product ${item.name} is out of stock or insufficient quantity (available: ${product?.quantityInStock}, requested: ${item.quantity})")
+                        throw Exception("Sản phẩm ${item.name} hết hàng hoặc không đủ số lượng (có sẵn: ${product?.quantityInStock}, yêu cầu: ${item.quantity})")
                     }
                 }
 
-                // Sau khi đã đọc xong, thực hiện tất cả thao tác ghi
+                // Cập nhật số lượng sản phẩm
                 productSnapshots.forEach { (item, _) ->
                     val productRef = firestore.collection("products").document(item.productId)
                     // Giảm số lượng tồn kho
-                    transaction.update(productRef, "quantityInStock", FieldValue.increment(-item.quantity.toLong())) // Ghi 1
+                    transaction.update(productRef, "quantityInStock", FieldValue.increment(-item.quantity.toLong()))
                     // Tăng số lượng đã bán
-                    transaction.update(productRef, "quantitySold", FieldValue.increment(item.quantity.toLong())) // Ghi 2
+                    transaction.update(productRef, "quantitySold", FieldValue.increment(item.quantity.toLong()))
                 }
 
-                // Thiết lập thời gian tạo
-                val orderWithTimestamp = order.copy(createdAt = Timestamp.now())
-                Log.d("FirestoreRepository", "Saving order with document ID: ${order.orderId}, userId: ${order.userId}, data: $orderWithTimestamp")
-                transaction.set(tempLockRef, mapOf("createdAt" to Timestamp.now())) // Ghi 3
-                transaction.set(orderRef, orderWithTimestamp) // Ghi 4
+                // Tạo timestamp và lưu đơn hàng
+                val currentTimestamp = Timestamp.now()
+                val orderWithTimestamp = order.copy(
+                    // Sử dụng hàm mở rộng để format timestamp
+                    createdAt = currentTimestamp.toFormattedDateTime(),
+                )
+
+                // Thiết lập khóa tạm thời và lưu đơn hàng
+                Log.d("FirestoreRepository", "Lưu đơn hàng với ID tài liệu: ${order.orderId}, userId: ${order.userId}, dữ liệu: $orderWithTimestamp")
+                transaction.set(tempLockRef, mapOf("createdAt" to currentTimestamp))
+                transaction.set(orderRef, orderWithTimestamp)
             }.await()
 
+            // Xóa khóa tạm thời
             tempLockRef.delete().await()
+
             // Xóa giỏ hàng sau khi lưu thành công
             clearCart(order.userId)
-            Log.d("FirestoreRepository", "Order saved successfully with document ID: ${order.orderId}")
+            Log.d("FirestoreRepository", "Lưu đơn hàng thành công với ID tài liệu: ${order.orderId}")
         } catch (e: Exception) {
-            Log.e("FirestoreRepository", "Error saving order: ${e.message}", e)
+            Log.e("FirestoreRepository", "Lỗi khi lưu đơn hàng: ${e.message}", e)
             throw e
         }
     }
 
-    // Cập nhật trạng thái đơn hàng và thời gian tương ứng
+    // Cập nhật trạng thái đơn hàng
     suspend fun updateOrderStatus(orderId: String, status: String) {
         if (orderId.isEmpty()) {
-            throw IllegalArgumentException("orderId cannot be empty")
+            throw IllegalArgumentException("orderId không được để trống")
         }
         try {
+            // Tạo timestamp và cập nhật trạng thái
+            val currentTimestamp = Timestamp.now()
             val updates = hashMapOf(
                 "status" to status,
-                "${status.lowercase()}_at" to Timestamp.now()
+                "${status.lowercase()}_at" to currentTimestamp.toFormattedDateTime()
             )
+
             firestore.collection("orders").document(orderId)
                 .update(updates as Map<String, Any>)
                 .await()
-            Log.d("FirestoreRepository", "Updated order status for $orderId to $status")
+            Log.d("FirestoreRepository", "Đã cập nhật trạng thái đơn hàng cho $orderId thành $status")
         } catch (e: Exception) {
-            Log.e("FirestoreRepository", "Failed to update order status for $orderId: ${e.message}")
+            Log.e("FirestoreRepository", "Không thể cập nhật trạng thái đơn hàng cho $orderId: ${e.message}")
             throw e
         }
     }
@@ -505,6 +522,18 @@ class FirestoreRepository @Inject constructor() {
             Result.success(doc.exists())
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    // Hàm mở rộng để chuyển đổi Timestamp sang chuỗi ngày giờ có định dạng
+    fun Timestamp.toFormattedDateTime(format: String = "dd/MM/yyyy HH:mm:ss"): String {
+        return try {
+            val sdf = SimpleDateFormat(format, Locale.getDefault())
+            sdf.timeZone = TimeZone.getDefault() // Sử dụng múi giờ mặc định của thiết bị
+            sdf.format(this.toDate())
+        } catch (e: Exception) {
+            // Quay về toString nếu việc định dạng thất bại
+            this.toString()
         }
     }
 }

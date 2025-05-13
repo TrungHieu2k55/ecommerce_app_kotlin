@@ -40,6 +40,9 @@ import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,6 +109,10 @@ fun PaymentMethodsScreen(
                     if (captureResponse?.status == "COMPLETED") {
                         Log.d("PaymentMethodsScreen", "Thanh toán PayPal thành công, kiểm tra giỏ hàng")
                         if (cartViewModel.validateCartItems()) {
+                            val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                                timeZone = TimeZone.getTimeZone("UTC")
+                            }
+                            val currentTime = dateFormat.format(java.util.Date())
                             val order = Order(
                                 orderId = orderId,
                                 userId = userId,
@@ -120,7 +127,7 @@ fun PaymentMethodsScreen(
                                 },
                                 totalPrice = totalCost,
                                 status = "Paid",
-                                createdAt = com.google.firebase.Timestamp.now(),
+                                createdAt = currentTime, // Lưu dưới dạng ISO 8601
                                 shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                                 couponCode = null,
                                 discount = 0.0
@@ -341,6 +348,10 @@ fun PaymentMethodsScreen(
 
                             try {
                                 if (selectedPaymentMethod != "PayPal") {
+                                    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                                        timeZone = TimeZone.getTimeZone("UTC")
+                                    }
+                                    val currentTime = dateFormat.format(java.util.Date())
                                     val paymentId = if (selectedPaymentMethod == "COD") "cod_${UUID.randomUUID()}" else "card_${UUID.randomUUID()}"
                                     val order = Order(
                                         orderId = paymentId,
@@ -356,7 +367,7 @@ fun PaymentMethodsScreen(
                                         },
                                         totalPrice = totalCost,
                                         status = if (selectedPaymentMethod == "COD") "Processing" else "Paid",
-                                        createdAt = com.google.firebase.Timestamp.now(),
+                                        createdAt = currentTime, // Lưu dưới dạng ISO 8601
                                         shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                                         couponCode = null,
                                         discount = 0.0

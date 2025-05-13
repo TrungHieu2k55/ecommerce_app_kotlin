@@ -30,6 +30,7 @@ import com.example.duan.Model.model.Order
 import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -138,7 +139,7 @@ fun OrderDetailScreen(
                         .wrapContentHeight()
                         .padding(paddingValues)
                         .padding(horizontal = 16.dp)
-                        .verticalScroll(rememberScrollState()) // Thay LazyColumn bằng Column + verticalScroll
+                        .verticalScroll(rememberScrollState())
                 ) {
                     // Order status timeline
                     OrderStatusTimeline(order)
@@ -220,12 +221,49 @@ fun OrderDetailScreen(
 
 @Composable
 fun OrderStatusTimeline(order: Order) {
-    val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    val createdAt = order.createdAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-    val inProgressAt = order.inProgressAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-    val shippedAt = order.shippedAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-    val deliveredAt = order.deliveredAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-    val canceledAt = order.canceledAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+    val dateFormatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).apply {
+        timeZone = TimeZone.getTimeZone("UTC") // Xử lý múi giờ UTC
+    }
+    val createdAt = order.createdAt?.let {
+        try {
+            dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) } ?: "N/A"
+        } catch (e: Exception) {
+            Log.e("OrderStatusTimeline", "Lỗi parse createdAt: ${e.message}")
+            "N/A"
+        }
+    } ?: "N/A"
+    val inProgressAt = order.inProgressAt?.let {
+        try {
+            dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) } ?: "N/A"
+        } catch (e: Exception) {
+            Log.e("OrderStatusTimeline", "Lỗi parse inProgressAt: ${e.message}")
+            "N/A"
+        }
+    } ?: "N/A"
+    val shippedAt = order.shippedAt?.let {
+        try {
+            dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) } ?: "N/A"
+        } catch (e: Exception) {
+            Log.e("OrderStatusTimeline", "Lỗi parse shippedAt: ${e.message}")
+            "N/A"
+        }
+    } ?: "N/A"
+    val deliveredAt = order.deliveredAt?.let {
+        try {
+            dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) } ?: "N/A"
+        } catch (e: Exception) {
+            Log.e("OrderStatusTimeline", "Lỗi parse deliveredAt: ${e.message}")
+            "N/A"
+        }
+    } ?: "N/A"
+    val canceledAt = order.canceledAt?.let {
+        try {
+            dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) } ?: "N/A"
+        } catch (e: Exception) {
+            Log.e("OrderStatusTimeline", "Lỗi parse canceledAt: ${e.message}")
+            "N/A"
+        }
+    } ?: "N/A"
 
     val statusList = listOf(
         Triple("Delivered", order.status == "Delivered", deliveredAt),
@@ -406,7 +444,7 @@ fun OrderItemsSection(order: Order) {
                         Column(
                             modifier = Modifier
                                 .wrapContentHeight()
-                                .weight(1f) // Đảm bảo Column không mở rộng quá mức
+                                .weight(1f)
                         ) {
                             Text(
                                 text = item.name ?: "Unknown",

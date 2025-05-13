@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                         },
                         totalPrice = totalCost,
                         status = "Paid",
-                        createdAt = Timestamp.now(),
+                        createdAt = Timestamp.now().toString(),
                         shippingAddress = "Địa chỉ giao hàng của người dùng",
                         couponCode = null,
                         discount = 0.0

@@ -153,14 +153,51 @@ fun OrderItem(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                    val dateFormatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).apply {
+                        timeZone = java.util.TimeZone.getTimeZone("UTC") // Xử lý múi giờ UTC
+                    }
                     val statusDate = when (order.status) {
-                        "Delivered" -> order.deliveredAt?.toDate()?.let { dateFormatter.format(it) }
-                        "Shipped" -> order.shippedAt?.toDate()?.let { dateFormatter.format(it) }
-                        "Processing" -> order.inProgressAt?.toDate()?.let { dateFormatter.format(it) }
-                        "Canceled" -> order.canceledAt?.toDate()?.let { dateFormatter.format(it) }
-                        else -> order.createdAt?.toDate()?.let { dateFormatter.format(it) }
-                    } ?: "N/A"
+                        "Delivered" -> order.deliveredAt?.let {
+                            try {
+                                dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) }
+                                    ?: "N/A"
+                            } catch (e: Exception) {
+                                "N/A"
+                            }
+                        } ?: "N/A"
+                        "Shipped" -> order.shippedAt?.let {
+                            try {
+                                dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) }
+                                    ?: "N/A"
+                            } catch (e: Exception) {
+                                "N/A"
+                            }
+                        } ?: "N/A"
+                        "Processing" -> order.inProgressAt?.let {
+                            try {
+                                dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) }
+                                    ?: "N/A"
+                            } catch (e: Exception) {
+                                "N/A"
+                            }
+                        } ?: "N/A"
+                        "Canceled" -> order.canceledAt?.let {
+                            try {
+                                dateFormatter.parse(it.toString())?.let { date -> dateFormatter.format(date) }
+                                    ?: "N/A"
+                            } catch (e: Exception) {
+                                "N/A"
+                            }
+                        } ?: "N/A"
+                        else -> order.createdAt?.let {
+                            try {
+                                dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) }
+                                    ?: "N/A"
+                            } catch (e: Exception) {
+                                "N/A" // Xử lý lỗi parse
+                            }
+                        } ?: "N/A"
+                    }
                     Text(
                         text = statusDate,
                         fontSize = 12.sp,

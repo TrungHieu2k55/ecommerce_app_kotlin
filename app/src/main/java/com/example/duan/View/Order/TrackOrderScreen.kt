@@ -1,5 +1,6 @@
 package com.example.duan.View.Order
 
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -23,7 +24,8 @@ import coil.compose.rememberAsyncImagePainter
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
+import java.util.TimeZone
 import com.example.duan.Model.repository.FirestoreRepository
 import kotlinx.coroutines.launch
 
@@ -160,11 +162,41 @@ fun TrackOrderScreen(
             Text("Order Status", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
 
-            val dateFormatter = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-            val createdAtFormatted = order.createdAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-            val inProgressAtFormatted = order.inProgressAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
-            val shippedAtFormatted = order.shippedAt?.toDate()?.let { dateFormatter.format(it) } ?: "Expected ${order.tracking?.estimatedDelivery ?: "N/A"}"
-            val deliveredAtFormatted = order.deliveredAt?.toDate()?.let { dateFormatter.format(it) } ?: "N/A"
+            val dateFormatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).apply {
+                timeZone = TimeZone.getTimeZone("UTC") // Xử lý múi giờ UTC
+            }
+            val createdAtFormatted = order.createdAt?.let {
+                try {
+                    dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) } ?: "N/A"
+                } catch (e: Exception) {
+                    Log.e("TrackOrderScreen", "Lỗi parse createdAt: ${e.message}")
+                    "N/A"
+                }
+            } ?: "N/A"
+            val inProgressAtFormatted = order.inProgressAt?.let {
+                try {
+                    dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) } ?: "N/A"
+                } catch (e: Exception) {
+                    Log.e("TrackOrderScreen", "Lỗi parse inProgressAt: ${e.message}")
+                    "N/A"
+                }
+            } ?: "N/A"
+            val shippedAtFormatted = order.shippedAt?.let {
+                try {
+                    dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) } ?: "Expected ${order.tracking?.estimatedDelivery ?: "N/A"}"
+                } catch (e: Exception) {
+                    Log.e("TrackOrderScreen", "Lỗi parse shippedAt: ${e.message}")
+                    "Expected ${order.tracking?.estimatedDelivery ?: "N/A"}"
+                }
+            } ?: "Expected ${order.tracking?.estimatedDelivery ?: "N/A"}"
+            val deliveredAtFormatted = order.deliveredAt?.let {
+                try {
+                    dateFormatter.parse(it)?.let { date -> dateFormatter.format(date) } ?: "N/A"
+                } catch (e: Exception) {
+                    Log.e("TrackOrderScreen", "Lỗi parse deliveredAt: ${e.message}")
+                    "N/A"
+                }
+            } ?: "N/A"
 
             Column {
                 OrderStatusItemWithLine(
