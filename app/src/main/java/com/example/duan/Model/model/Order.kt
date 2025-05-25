@@ -26,6 +26,8 @@ data class OrderItem(
     val imageUrl: String = "",
     val quantity: Int = 0,
     val price: Double = 0.0,
+    val size: String? = null, // Thêm size
+    val color: String? = null, // Thêm color
     val hasReviewed: Boolean = false
 )
 

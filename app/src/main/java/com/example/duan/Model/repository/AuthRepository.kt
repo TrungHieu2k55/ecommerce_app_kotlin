@@ -57,7 +57,7 @@ class AuthRepository @Inject constructor(
             googleSignInClient.signOut().await()
             LoginManager.getInstance().logOut()
         } catch (e: Exception) {
-            // Xử lý lỗi nếu cần
+
         }
     }
 

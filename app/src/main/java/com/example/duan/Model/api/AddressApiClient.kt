@@ -50,10 +50,8 @@ object AddressApiClient {
     suspend fun getDistricts(provinceCode: Int): List<DistrictResponse> {
         return try {
             val responseText = client.get("https://provinces.open-api.vn/api/p/$provinceCode?depth=2").bodyAsText()
-            println("Raw districts response: $responseText")
             val provinceResponse = json.decodeFromString<ProvinceResponse>(responseText)
             val districts = provinceResponse.districts ?: emptyList()
-            println("Parsed districts: $districts")
             districts
         } catch (e: Exception) {
             println("Error fetching districts: ${e.message}")
@@ -64,10 +62,8 @@ object AddressApiClient {
     suspend fun getWards(districtCode: Int): List<WardResponse> {
         return try {
             val responseText = client.get("https://provinces.open-api.vn/api/d/$districtCode?depth=2").bodyAsText()
-            println("Raw wards response: $responseText")
             val districtResponse = json.decodeFromString<DistrictResponse>(responseText)
             val wards = districtResponse.wards ?: emptyList()
-            println("Parsed wards: $wards")
             wards
         } catch (e: Exception) {
             println("Error fetching wards: ${e.message}")

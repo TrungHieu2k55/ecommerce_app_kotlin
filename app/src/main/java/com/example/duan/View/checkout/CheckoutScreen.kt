@@ -55,7 +55,7 @@ fun CheckoutScreen(
             ShippingOption(
                 "1",
                 "Giao hàng tiết kiệm",
-                "07 Tháng 05 2025",
+                "27 Tháng 05 2025",
                 2.0
             )
         )
@@ -330,6 +330,16 @@ fun CheckoutItem(item: CartItem) {
             )
             Text(
                 text = "Kích thước: ${item.size ?: "N/A"}",
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+            Text(
+                text = "Màu sắc: ${item.color ?: "N/A"}",
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+            Text(
+                text = "Số lượng: ${item.quantity}",
                 fontSize = 14.sp,
                 color = Color.Gray
             )

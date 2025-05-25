@@ -233,20 +233,7 @@ fun LoginScreen(authViewModel: AuthViewModel, navController: NavController) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                OutlinedButton(
-                    onClick = { /* Handle Apple Login */ },
-                    modifier = Modifier.size(56.dp),
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Color(0xFFD1D5DB)),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentDescription = "Apple",
-                        tint = Color.Black,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+
                 OutlinedButton(
                     onClick = { googleSignInLauncher.launch(authViewModel.getGoogleSignInIntent()) },
                     modifier = Modifier.size(56.dp),

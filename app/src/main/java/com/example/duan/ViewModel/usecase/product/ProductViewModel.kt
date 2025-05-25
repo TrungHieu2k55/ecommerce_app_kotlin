@@ -60,6 +60,11 @@ class ProductViewModel @Inject constructor(
         fetchAllProducts()
     }
 
+    fun fetcjAllProducts(){
+        viewModelScope.launch {
+            _isLoading.value = true
+        }
+    }
     fun fetchAllProducts() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -174,7 +179,7 @@ class ProductViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            val result = repository.getProductsByCategory("technology")
+            val result = repository.getProductsByCategory("Technology")
             if (result.isSuccess) {
                 _technologyProducts.value = result.getOrNull() ?: emptyList()
                 Log.d("ProductViewModel", "Fetched ${result.getOrNull()?.size} technology products")

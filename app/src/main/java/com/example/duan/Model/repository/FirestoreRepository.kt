@@ -170,7 +170,7 @@ class FirestoreRepository @Inject constructor() {
     suspend fun getNewInProducts(limit: Long = 5): Result<List<Product>> {
         return try {
             val snapshot = firestore.collection("products")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .orderBy("created_at", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get()
                 .await()
@@ -263,6 +263,7 @@ class FirestoreRepository @Inject constructor() {
             Result.failure(e)
         }
     }
+
 
     // Lấy đánh giá sản phẩm
     suspend fun getReviews(productId: String): Result<List<Review>> {
@@ -509,6 +510,7 @@ class FirestoreRepository @Inject constructor() {
             Result.failure(e)
         }
     }
+
 
     // Kiểm tra xem một sản phẩm có được yêu thích bởi người dùng không
     suspend fun isFavorited(userId: String, productId: String): Result<Boolean> {

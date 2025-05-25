@@ -41,7 +41,7 @@ fun FilterDialog(
                         .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("ALL", "Nike", "Adidas", "Puma","Technology").forEach { brand ->
+                    listOf("ALL", "Nike","Technology" , "Puma","Adidas").forEach { brand ->
                         FilterButton(
                             text = brand,
                             isSelected = selectedBrand == brand,

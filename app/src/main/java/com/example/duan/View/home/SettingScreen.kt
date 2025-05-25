@@ -186,13 +186,6 @@ fun SettingScreen(navController: NavController, authViewModel: AuthViewModel) {
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
                         SettingItem("Wishlist") { navController.navigate("wishlist") }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
-                        SettingItem("Payment") {
-                            userId?.let {
-                                navController.navigate("payment_methods/$it")
-                            } ?: run {
-                                Log.e("SettingScreen", "UserId is null, cannot navigate to payment_methods")
-                            }
-                        }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)
                         SettingItem("Order History") { navController.navigate("order_history") }
                         Divider(color = Color(0xFFEEEEEE), thickness = 1.dp)

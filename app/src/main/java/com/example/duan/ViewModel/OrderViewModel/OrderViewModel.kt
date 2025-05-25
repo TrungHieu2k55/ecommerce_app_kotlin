@@ -144,7 +144,7 @@ class OrderViewModel @Inject constructor(
                     "userId" to userId,
                     "rating" to rating,
                     "comment" to comment,
-                    "timestamp" to Timestamp.now().toString(), // Lưu dưới dạng chuỗi
+                    "timestamp" to Timestamp.now(),
                     "userName" to userName,
                     "userAvatar" to userAvatar
                 )

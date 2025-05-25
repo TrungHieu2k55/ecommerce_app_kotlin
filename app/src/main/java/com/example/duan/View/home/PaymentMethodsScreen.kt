@@ -11,7 +11,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Money
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -122,12 +122,14 @@ fun PaymentMethodsScreen(
                                         name = cartItem.productName,
                                         imageUrl = cartItem.image,
                                         quantity = cartItem.quantity,
-                                        price = cartItem.price
+                                        price = cartItem.price,
+                                        size = cartItem.size,
+                                        color = cartItem.color
                                     )
                                 },
                                 totalPrice = totalCost,
                                 status = "Paid",
-                                createdAt = currentTime, // Lưu dưới dạng ISO 8601
+                                createdAt = currentTime,
                                 shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                                 couponCode = null,
                                 discount = 0.0
@@ -283,7 +285,7 @@ fun PaymentMethodsScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 PaymentOptionItem(
-                    icon = Icons.Default.Phone,
+                    icon = Icons.Default.Payments,
                     name = "PayPal",
                     isSelected = selectedPaymentMethod == "PayPal",
                     onLinkClick = {
@@ -362,12 +364,14 @@ fun PaymentMethodsScreen(
                                                 name = cartItem.productName,
                                                 imageUrl = cartItem.image,
                                                 quantity = cartItem.quantity,
-                                                price = cartItem.price
+                                                price = cartItem.price,
+                                                size = cartItem.size,
+                                                color = cartItem.color
                                             )
                                         },
                                         totalPrice = totalCost,
                                         status = if (selectedPaymentMethod == "COD") "Processing" else "Paid",
-                                        createdAt = currentTime, // Lưu dưới dạng ISO 8601
+                                        createdAt = currentTime,
                                         shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                                         couponCode = null,
                                         discount = 0.0

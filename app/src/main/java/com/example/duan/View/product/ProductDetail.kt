@@ -79,6 +79,14 @@ fun ProductDetailsScreen(
     }
     val reviews by productViewModel.reviews.collectAsState()
     val errorMessage by productViewModel.errorMessage.collectAsState()
+    val updatedProduct by productViewModel.selectedProduct.collectAsState()
+    // Lấy dữ liệu sản phẩm mới nhất từ Firestore
+    LaunchedEffect(product.id) {
+        if (product.id.isNotEmpty()) {
+            productViewModel.fetchProductById(product.id)
+        }
+    }
+
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -170,49 +178,28 @@ fun ProductDetailsScreen(
 
                     Button(
                         onClick = {
-                            // Kiểm tra size
-                            if (product.sizes.isNotEmpty() && selectedSize == "N/A") {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Vui lòng chọn kích thước")
-                                }
-                                return@Button
-                            }
-                            // Kiểm tra color
-                            if (product.colors.isNotEmpty() && selectedColor == "#000000") {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Vui lòng chọn màu sắc")
-                                }
-                                return@Button
-                            }
-                            // Kiểm tra quantity
-                            if (quantity <= 0) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Vui lòng chọn số lượng hợp lệ")
-                                }
-                                return@Button
-                            }
-                            // Kiểm tra image
-                            if (selectedImage.isEmpty()) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Vui lòng chọn hình ảnh")
-                                }
-                                return@Button
-                            }
-
-                            // Thêm vào giỏ hàng nếu tất cả điều kiện thỏa mãn
-                            val cartItem = CartItem(
-                                id = product.id + System.currentTimeMillis().toString(),
-                                productId = product.id,
-                                productName = product.name,
-                                price = product.price,
-                                quantity = quantity,
-                                image = selectedImage,
-                                size = selectedSize,
-                                color = selectedColor
-                            )
-                            cartViewModel.addToCart(cartItem)
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Đã thêm vào giỏ hàng thành công!")
+                                updatedProduct?.let { prod ->
+                                    if (prod.quantityInStock >= quantity) {
+                                        // Thêm vào giỏ hàng nếu tất cả điều kiện thỏa mãn
+                                        val cartItem = CartItem(
+                                            id = product.id + System.currentTimeMillis().toString(),
+                                            productId = product.id,
+                                            productName = product.name,
+                                            price = product.price,
+                                            quantity = quantity,
+                                            image = selectedImage,
+                                            size = selectedSize,
+                                            color = selectedColor
+                                        )
+                                        cartViewModel.addToCart(cartItem)
+                                        snackbarHostState.showSnackbar("Đã thêm vào giỏ hàng thành công!")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Số lượng tồn kho không đủ! Chỉ còn ${prod.quantityInStock} sản phẩm.")
+                                    }
+                                } ?: run {
+                                    snackbarHostState.showSnackbar("Không thể tải thông tin sản phẩm!")
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(

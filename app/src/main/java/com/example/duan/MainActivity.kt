@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.duan.Model.api.capturePayPalPayment
 import com.example.duan.Model.config.CloudinaryConfig
@@ -19,18 +20,19 @@ import com.example.duan.View.theme.DuanTheme
 import com.example.duan.ViewModel.OrderViewModel.OrderViewModel
 import com.example.duan.ViewModel.cart.CartViewModel
 import com.example.duan.ViewModel.usecase.auth.AuthViewModel
-import com.google.firebase.Timestamp
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val TAG = "MainActivity"
 
-    // Khởi tạo ViewModel bằng lazy để trì hoãn cho đến khi cần
     private val cartViewModel by lazy {
         ViewModelProvider(this).get(CartViewModel::class.java)
     }
@@ -61,14 +63,12 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "Failed to initialize Cloudinary: ${e.message}")
         }
 
-        // Kiểm tra intent ban đầu nếu có
         if (intent?.data != null) {
             processPaymentResult(intent?.data)
         }
 
         setContent {
             DuanTheme {
-                // Sử dụng ViewModelProvider thay vì viewModel() để lấy AuthViewModel
                 val authViewModel = ViewModelProvider(this@MainActivity).get(AuthViewModel::class.java)
                 AppNavigation(
                     authViewModel = authViewModel,
@@ -85,9 +85,6 @@ class MainActivity : ComponentActivity() {
         processPaymentResult(intent.data)
     }
 
-    /**
-     * Xử lý kết quả thanh toán từ URI được trả về
-     */
     private fun processPaymentResult(uri: Uri?) {
         uri?.let {
             Log.d(TAG, "Processing payment result URI: $uri")
@@ -97,10 +94,8 @@ class MainActivity : ComponentActivity() {
                 val totalCost = uri.getQueryParameter("totalCost")?.toDoubleOrNull() ?: 0.0
                 when (action) {
                     "return" -> {
-                        // Lấy orderId từ URL parameter
                         val orderId = uri.getQueryParameter("token")
-                        val generatedOrderId = "paypal_" + UUID.randomUUID().toString()
-
+                        val generatedOrderId = "paypal_${UUID.randomUUID()}"
                         if (orderId != null) {
                             Log.d(TAG, "PayPal payment approved, order ID: $orderId, generated orderId: $generatedOrderId")
                             completePayPalPayment(orderId, userId, totalCost, generatedOrderId)
@@ -122,25 +117,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Hoàn tất thanh toán PayPal bằng cách capture payment và điều hướng
-     */
     private fun completePayPalPayment(payment: String, userId: String, totalCost: Double, generatedOrderId: String) {
         Toast.makeText(this, "Đang xử lý thanh toán PayPal...", Toast.LENGTH_SHORT).show()
 
         CoroutineScope(Dispatchers.Main).launch {
             try {
+                val authViewModel = ViewModelProvider(this@MainActivity).get(AuthViewModel::class.java)
+                val userProfile = authViewModel.userProfile.value
+                val selectedAddress = userProfile?.addresses?.find { it.title == userProfile?.selectedAddress }?.details
+                    ?: "Chưa có địa chỉ được chọn"
+                val phoneNumber = userProfile?.phoneNumber ?: "Không có thông tin"
+
                 val captureResponse = capturePayPalPayment(payment)
                 if (captureResponse != null && captureResponse.status == "COMPLETED") {
                     Log.d(TAG, "PayPal payment captured successfully: ${captureResponse.id}")
 
-                    // Lấy danh sách cart items từ cartViewModel
                     val cartItems = cartViewModel.cartItems.value
                     if (cartItems.isEmpty()) {
                         Log.e(TAG, "Giỏ hàng trống, không thể tạo đơn hàng")
                         Toast.makeText(this@MainActivity, "Giỏ hàng trống, không thể tạo đơn hàng", Toast.LENGTH_LONG).show()
                         return@launch
                     }
+
+                    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                        timeZone = TimeZone.getTimeZone("UTC")
+                    }
+                    val currentTime = dateFormat.format(java.util.Date())
 
                     val order = Order(
                         orderId = generatedOrderId,
@@ -151,31 +153,26 @@ class MainActivity : ComponentActivity() {
                                 name = cartItem.productName,
                                 imageUrl = cartItem.image,
                                 quantity = cartItem.quantity,
-                                price = cartItem.price
+                                price = cartItem.price,
+                                size = cartItem.size,
+                                color = cartItem.color
                             )
                         },
                         totalPrice = totalCost,
                         status = "Paid",
-                        createdAt = Timestamp.now().toString(),
-                        shippingAddress = "Địa chỉ giao hàng của người dùng",
+                        createdAt = currentTime,
+                        shippingAddress = "$selectedAddress | Số điện thoại: $phoneNumber",
                         couponCode = null,
                         discount = 0.0
                     )
 
-                    // Lưu đơn hàng vào Firestore
                     FirestoreRepository().saveOrder(order)
                     Log.d(TAG, "Đã lưu đơn hàng với orderId: $generatedOrderId")
-
-                    // Xóa giỏ hàng
                     cartViewModel.clearCart()
-
-                    // Cập nhật danh sách đơn hàng
                     orderViewModel.refreshOrdersAfterPayment()
 
-                    // Hiển thị thông báo thành công
                     Toast.makeText(this@MainActivity, "Thanh toán PayPal thành công!", Toast.LENGTH_LONG).show()
 
-                    // Gửi Intent để điều hướng đến PaymentSuccessScreen
                     val intent = Intent("com.example.duan.PAYMENT_SUCCESS")
                     intent.putExtra("userId", userId)
                     intent.putExtra("paymentId", payment)
