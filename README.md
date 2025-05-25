@@ -2,7 +2,7 @@
 
 ## 📱 Giới thiệu
 
-Ứng dụng được phát triển bởi **Trương Nguyễn Trung Hiếu – 23IT.B058**, sử dụng nền tảng **Android Kotlin** với kiến trúc **MVVM** và thư viện hiện đại **Jetpack Compose**.
+Ứng dụng được phát triển bởi **Trương Nguyễn Trung Hiếu **, sử dụng nền tảng **Android Kotlin** với kiến trúc **MVVM** và thư viện hiện đại **Jetpack Compose**.
 
 ## 🎯 Mục tiêu
 
